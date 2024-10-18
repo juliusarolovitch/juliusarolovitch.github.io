@@ -11,23 +11,26 @@ redirect_from:
 
 Education
 ======
-* Ph.D in Version Control Theory, GitHub University, 2018 (expected)
-* M.S. in Jekyll, GitHub University, 2014
-* B.S. in GitHub, GitHub University, 2012
+* B.S. Electrical and Computer Engineering & Robotics, Carnegie Mellon University, 2026 (expected)
 
 Work experience
 ======
-* Spring 2024: Academic Pages Collaborator
+* Undergraduate Researcher, Search-Based Planning Lab, CMU Robotics Institute
   * Github University
   * Duties includes: Updates and improvements to template
   * Supervisor: The Users
 
-* Fall 2015: Research Assistant
+* Undergraduate Researcher, Biorobotics Lab, CMU Robotics Institute
   * Github University
   * Duties included: Merging pull requests
   * Supervisor: Professor Hub
 
-* Summer 2015: Research Assistant
+* Surgical Robotics Intern, Johnson & Johnson
+  * Github University
+  * Duties included: Tagging issues
+  * Supervisor: Professor Git
+
+* Undergraduate Researcher, Tel Aviv University
   * Github University
   * Duties included: Tagging issues
   * Supervisor: Professor Git
