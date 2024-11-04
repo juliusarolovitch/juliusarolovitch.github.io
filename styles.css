@@ -1,0 +1,83 @@
+body {
+    font-family: "Times New Roman", Times, serif;
+    max-width: 700px;
+    margin: 0 auto;
+    padding: 0 1em;
+}
+
+header,
+section {
+    text-align: left;
+    margin-top: 2em;
+}
+
+.profile-picture {
+    width: 120px;
+    height: auto;
+    display: block;
+    margin-bottom: 1em;
+}
+
+h1 {
+    font-size: 1.5em;
+    font-weight: normal;
+}
+
+h2 {
+    font-size: 1.3em;
+    font-weight: bold;
+}
+
+.contact-info {
+    margin-top: 1em;
+    line-height: 1.5;
+}
+
+.contact-info strong {
+    font-weight: bold;
+}
+
+.contact-info a {
+    color: blue;
+    text-decoration: underline;
+}
+
+#bio,
+#publications {
+    margin-top: 2em;
+}
+
+.publication {
+    display: flex;
+    align-items: flex-start;
+    margin-bottom: 1em;
+}
+
+.publication img {
+    width: 80px;
+    height: auto;
+    margin-right: 1em;
+    border: 1px solid #ccc;
+    /* Adds bounding box */
+    padding: 4px;
+    margin-top: 0.4em;
+    /* Shifts image slightly down */
+}
+
+a {
+    text-decoration: none;
+    color: black;
+}
+
+.social-links {
+    text-align: center;
+    margin-top: 2em;
+    padding-bottom: 1em;
+    /* Adds space at the bottom */
+}
+
+.social-links a {
+    color: blue;
+    text-decoration: underline;
+    margin: 0 0.5em;
+}
