@@ -8,13 +8,16 @@
     <link rel="stylesheet" href="styles.css">
     <!-- Google Fonts for Modern Typography -->
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+    <!-- Meta Description for SEO -->
+    <meta name="description"
+        content="Julius Arolovitch's personal website showcasing projects, publications, and teaching experience in Electrical and Computer Engineering & Robotics at CMU.">
 </head>
 
 <body>
     <!-- Header Section -->
     <header>
         <div class="header-container">
-            <img src="profile.jpeg" alt="Profile Picture" class="profile-picture">
+            <img src="images/profile.jpeg" alt="Profile Picture" class="profile-picture">
             <div class="header-info">
                 <h1>Julius Arolovitch</h1>
                 <p>Undergraduate, Electrical and Computer Engineering & Robotics, CMU</p>
@@ -32,17 +35,18 @@
     <section id="bio">
         <h2>About Me</h2>
         <p>Hello! I'm Julius, a junior at Carnegie Mellon studying ECE and Robotics. I'm fortunate to conduct research
-            at CMU's Robotics Institute under Professors Maxim Likhachev and Howie Choset. </p>
+            at CMU's Robotics Institute under Professors Maxim Likhachev and Howie Choset.</p>
 
         <p>My current work focuses on
-            applying generative learning to motion planning (SBPL) and spatial optimization for heterogenous multi-agent
+            applying generative learning to motion planning (SBPL) and spatial optimization for heterogeneous
+            multi-agent
             Ergodic search (Biorobotics).</p>
         <p>I am passionate about improving systems' ability to plan under uncertainty and leveraging learning to make
             more informed decisions. More broadly, I aim to build intelligent systems that help people.</p>
         <p>Previously, I spent the summer of 2023 at Tel Aviv University's Robotics Lab working on learning for object
             recognition with underactuated hands, and the summer of 2024 at Johnson & Johnson doing systems integration
             for robotic manipulators on Ottava. Before I caught interest in robotics, I wanted to be a doctor; I spent
-            my first year of undergrad pre-med at the Bioengineering program at the University of Pittsburgh. </p>
+            my first year of undergrad pre-med at the Bioengineering program at the University of Pittsburgh.</p>
         <p>In my free time, I enjoy exploring new corners of the world and climbing tall things. I'm actively involved
             in Jewish life at CMU, serving as President of CMU's Hillel and in various
             capacities in student government. I also
@@ -53,18 +57,18 @@
     <section id="publications">
         <h2>Publications</h2>
         <div class="publication">
-            <img src="phai.jpeg" alt="Publication: Learning Neural Priority Functions">
+            <img src="images/phai.jpeg" alt="Publication: Learning Neural Priority Functions">
             <div class="publication-details">
                 <h3>Learning Neural Priority Functions for Search-based Planning using Sufficient Conditions for Bounded
                     Suboptimality without Re-openings</h3>
                 <p><strong>Authors:</strong> <span class="highlight">Julius Arolovitch</span>*, Itamar Mishani*,
                     Ramkumar Natarajan, Maxim Likhachev</p>
                 <p><em>Under Review, International Conference on Automated Planning and Scheduling (ICAPS) 2025</em></p>
-                <a href="phai.pdf" target="_blank" class="btn">Download PDF</a>
+                <a href="publications/phai.pdf" target="_blank" class="btn">Download PDF</a>
             </div>
         </div>
         <div class="publication">
-            <img src="kinesthetic.jpeg" alt="Publication: Kinesthetic-based In-Hand Object Recognition">
+            <img src="images/kinesthetic.jpeg" alt="Publication: Kinesthetic-based In-Hand Object Recognition">
             <div class="publication-details">
                 <h3>Kinesthetic-based In-Hand Object Recognition with an Underactuated Robotic Hand</h3>
                 <p><strong>Authors:</strong> <span class="highlight">Julius Arolovitch</span>*, Osher Azulay*, Avishai
@@ -72,8 +76,48 @@
                 <p><em>IEEE International Conference on Robotics and Automation (ICRA) 2024</em></p>
                 <div class="publication-links">
                     <a href="https://arxiv.org/pdf/2401.16802" target="_blank">ArXiv</a> |
-                    <a href="kinesthetic.pdf" target="_blank">Download PDF</a>
+                    <a href="publications/kinesthetic.pdf" target="_blank">Download PDF</a>
                 </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Projects Section -->
+    <section id="projects">
+        <h2>Projects</h2>
+        <div class="project">
+            <h3>SheepFusion</h3>
+            <p>
+                In my initial experimentation with diffusion, I set out to create an image diffusion model. I quickly
+                gained
+                an appreciation for what it takes to put together DALL-E, and scaled down my goal to generating images
+                of my favorite animal: sheep.
+                I used a U-Net-based architecture with 137M parameters. The model incorporates a
+                UNet2DModel with the following
+                specifications:
+            <ul>
+                <li><strong>Sample Size:</strong> 224x224 pixels</li>
+                <li><strong>Input Channels:</strong> 3 (RGB)</li>
+                <li><strong>Output Channels:</strong> 3 (RGB)</li>
+                <li><strong>Layers per Block:</strong> 2</li>
+                <li><strong>Block Output Channels:</strong> (256, 512, 512, 512)</li>
+                <li><strong>Down Block Types:</strong> DownBlock2D</li>
+                <li><strong>Up Block Types:</strong> UpBlock2D</li>
+            </ul>
+            The model is trained using a DDPMScheduler with 1,000 training timesteps, employing an
+            AdamW optimizer with a learning rate of 1e-4 and weight decay of 1e-5. Training took approximately 3 hours
+            on an NVIDIA GeForce RTX 4090.
+            <br><br>
+            The dataset comprises approximately
+            <a href="https://data.mendeley.com/datasets/cstwjgtxfd/1" target="_blank" rel="noopener noreferrer"
+                class="dataset-link">1,700 publicly available images of sheep</a>.
+            Considering the size of the dataset and the training time, the results are promising. I plan, however, to
+            revisit this at some point in the future.
+            </p>
+            <div class="project-media">
+                <img src="images/1.gif" alt="Sheep Diffusion Model GIF 1" class="project-gif">
+                <img src="images/2.gif" alt="Sheep Diffusion Model GIF 2" class="project-gif">
+                <!-- <img src="images/sheep_diffusion3.gif" alt="Sheep Diffusion Model GIF 3" class="project-gif"> -->
             </div>
         </div>
     </section>

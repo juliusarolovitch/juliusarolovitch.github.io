@@ -81,3 +81,88 @@ a {
     text-decoration: underline;
     margin: 0 0.5em;
 }
+
+/* Projects Section Styles */
+#projects .project {
+    margin-bottom: 2em;
+}
+
+#projects .project h3 {
+    font-size: 1.2em;
+    font-weight: bold;
+    margin-bottom: 0.5em;
+}
+
+#projects .project p {
+    line-height: 1.6;
+    margin-bottom: 1em;
+}
+
+#projects .project-media {
+    text-align: center;
+    margin-bottom: 1em;
+}
+
+#projects .project-gif {
+    width: 224px;
+    /* Set width to match GIF size */
+    height: 224px;
+    /* Set height to match GIF size */
+    border: 1px solid #ccc;
+    padding: 4px;
+    object-fit: cover;
+    /* Ensures the image scales correctly */
+    /* Optional: Add a subtle box-shadow for better visibility */
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+/* Responsive Adjustments */
+@media (max-width: 600px) {
+    body {
+        padding: 0 0.5em;
+    }
+
+    .profile-picture {
+        width: 100px;
+    }
+
+    .project-gif {
+        width: 100%;
+        max-width: 224px;
+        height: auto;
+    }
+
+    h1 {
+        font-size: 1.3em;
+    }
+
+    h2 {
+        font-size: 1.1em;
+    }
+
+    .publication img {
+        width: 60px;
+    }
+}
+
+/* Existing styles */
+
+/* Ensure that links are styled correctly */
+.dataset-link {
+    color: #007BFF;
+    /* Bootstrap primary blue */
+    text-decoration: underline;
+    font-weight: bold;
+    /* Optional: Makes the link text bold for emphasis */
+    cursor: pointer;
+    /* Changes cursor to pointer on hover */
+}
+
+.dataset-link:hover {
+    color: #0056b3;
+    /* Darker blue on hover for better visibility */
+    text-decoration: underline;
+    /* Ensures underline remains on hover */
+}
+
+/* Additional existing styles... */
