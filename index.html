@@ -39,23 +39,21 @@
             at CMU's Robotics Institute under Professors Maxim Likhachev and Howie Choset on motion planning.</p>
 
         <p>My current work focuses on
-            applying generative learning to motion planning (Search-based Planning Lab) and spatial optimization for
-            heterogeneous
-            multi-agent
-            Ergodic search (Biorobotics Lab).</p>
+            developing algorithms that leverage parallelism for planning for manipulation (Search-based Planning Lab)
+            and decentralized
+            agent distribution methods for Ergodic search for agent teams with heterogenous sensing abilities
+            (Biorobotics Lab).</p>
 
-        <p>I am motivated to contribute to work to enable robotic agents to plan in dynamic, stochastic, or
-            partially-observable environments. I am particularly excited by 1) leveraging learning to allow planners to
-            exploit environment information that is difficult to model analytically and 2) finding methods to decompose
-            search problems, particularly in high-D and non-Euclidean spaces, into subtasks that are amenable to
-            parallel computation with minimal intercommunication. More broadly, I am passionate about building
+        <p>I am excited by work to better enable robotic agents to plan in dynamic, stochastic, or
+            partially-observable environments. More broadly, I am passionate about building
             intelligent systems that help people.
         <p>Previously, I spent the summer of 2023 at Tel Aviv University's Robotics Lab working on learning for object
             recognition with underactuated hands, and the summer of 2024 at Johnson & Johnson doing systems integration
             R&D
             for robotic manipulators on Ottava. Before I caught interest in robotics, I wanted to be a doctor; I spent
             my first year of undergrad pre-med at the Bioengineering program at the University of Pittsburgh.</p>
-        <p>In my free time, I enjoy exploring new corners of the world, hiking up tall things, playing classical piano, and compete in poker and hackathons. I'm actively involved
+        <p>In my free time, I enjoy exploring new corners of the world, hiking up tall things, playing classical piano,
+            and compete in poker and hackathons. I'm actively involved
             in Jewish life at CMU, serving as President of CMU's Hillel and in various
             capacities in student government.</p>
     </section>
@@ -105,35 +103,61 @@
 
     <!-- Projects Section -->
     <section id="projects">
+
         <h2>Projects</h2>
+
+        <div class="project">
+            <h3>DAgger and Behavior Cloning in OpenAI Gym</h3>
+            <p>
+                For 16-831 Introduction to Robot Learning @ CMU, I implemented DAgger and Behavior Cloning for agents in
+                OpenAI Gym and MuJoCo. Using a provided oracle policy, the agents achieved expert-level mean evaluation
+                returns after 5 and 30 iterations for the Ant-v2 and Humanoid-v2 environments, respectively. The
+                implementation uses an MLP for the NN. Links:
+                <a href="https://github.com/juliusarolovitch/16831-HW1" target="_blank" class="project-link">GitHub</a>
+                and
+                <a href="writeups/16831_hw1.pdf" target="_blank" class="project-link">writeup</a>.
+            </p>
+            <p>
+                Below are the results of training the Humanoid-v2 and Ant-v2 agents using DAgger, visualized over
+                iterations:
+            </p>
+            <div class="project-media">
+                <h4>Humanoid-v2</h4>
+                <div class="gif-container" style="display: flex; justify-content: space-around; align-items: center;">
+                    <figure style="text-align: center;">
+                        <img src="images/humanoid_iter1.gif" alt="Humanoid DAgger Iteration 1" class="project-gif">
+                        <figcaption>Iteration 1</figcaption>
+                    </figure>
+                    <figure style="text-align: center;">
+                        <img src="images/humanoid_iter5.gif" alt="Humanoid DAgger Iteration 5" class="project-gif">
+                        <figcaption>Iteration 5</figcaption>
+                    </figure>
+                    <figure style="text-align: center;">
+                        <img src="images/humanoid_iter30.gif" alt="Humanoid DAgger Iteration 30" class="project-gif">
+                        <figcaption>Iteration 30</figcaption>
+                    </figure>
+                </div>
+            </div>
+            <div class="project-media">
+                <h4>Ant-v2</h4>
+                <div class="gif-container" style="display: flex; justify-content: space-around; align-items: center;">
+                    <figure style="text-align: center;">
+                        <img src="images/ant_iter5.gif" alt="Ant DAgger Iteration 5" class="project-gif">
+                        <figcaption>Iteration 5</figcaption>
+                    </figure>
+                </div>
+            </div>
+        </div>
+
         <div class="project">
             <h3>SheepFusion</h3>
             <p>
-                In my initial experimentation with diffusion, I set out to create an image diffusion model. I quickly
-                gained
-                an appreciation for what it takes to put together DALL-E, and scaled down my goal to generating images
-                of my favorite animal: sheep.
-                I used a U-Net-based architecture with 137M parameters. The model incorporates a
-                UNet2DModel with the following
-                specifications:
-            <ul>
-                <li><strong>Sample Size:</strong> 224x224 pixels</li>
-                <li><strong>Input Channels:</strong> 3 (RGB)</li>
-                <li><strong>Output Channels:</strong> 3 (RGB)</li>
-                <li><strong>Layers per Block:</strong> 2</li>
-                <li><strong>Block Output Channels:</strong> (256, 512, 512, 512)</li>
-                <li><strong>Down Block Types:</strong> DownBlock2D</li>
-                <li><strong>Up Block Types:</strong> UpBlock2D</li>
-            </ul>
-            The model is trained using a DDPMScheduler with 1,000 training timesteps, employing an
-            AdamW optimizer with a learning rate of 1e-4 and weight decay of 1e-5. Training took approximately 3 hours
-            on an NVIDIA GeForce RTX 4090.
-            <br><br>
-            The dataset comprises approximately
-            <a href="https://data.mendeley.com/datasets/cstwjgtxfd/1" target="_blank" rel="noopener noreferrer"
-                class="dataset-link">1,700 publicly available images of sheep</a>.
-            Considering the size of the dataset and the training time, the results are promising. I plan, however, to
-            revisit this at some point in the future.
+                In my initial experimentation with diffusion, I set out to create an image diffusion model.
+                The UNet-based architecture with 137 parameters took 3 hours of training on a dataset of <a
+                    href="https://data.mendeley.com/datasets/cstwjgtxfd/1" target="_blank" rel="noopener noreferrer"
+                    class="dataset-link">1,700 publicly available images of sheep</a>. Considering the size of the
+                dataset, even after augmentation, the results were promising!
+
             </p>
             <div class="project-media">
                 <img src="images/1.gif" alt="Sheep Diffusion Model GIF 1" class="project-gif">
