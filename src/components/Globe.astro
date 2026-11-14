@@ -1,0 +1,65 @@
+---
+import { geoGraticule10, geoOrthographic, geoPath } from 'd3-geo';
+import { countries } from '../lib/geo';
+
+interface Props {
+  coords: [number, number];
+}
+
+const [lat, lon] = Astro.props.coords;
+const size = 160;
+const projection = geoOrthographic()
+  .rotate([-lon, -lat * 0.6])
+  .fitExtent(
+    [
+      [2, 2],
+      [size - 2, size - 2],
+    ],
+    { type: 'Sphere' },
+  );
+const path = geoPath(projection);
+const [x, y] = projection([lon, lat])!;
+---
+
+<svg class="globe" viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
+  <path class="sphere" d={path({ type: 'Sphere' })} />
+  <path class="graticule" d={path(geoGraticule10())} />
+  <path class="land" d={path({ type: 'FeatureCollection', features: countries })} />
+  <circle class="ring" cx={x} cy={y} r="9" />
+  <circle class="dot" cx={x} cy={y} r="3.5" />
+</svg>
+
+<style>
+  .globe {
+    width: 9rem;
+    height: 9rem;
+    flex: none;
+  }
+
+  .sphere {
+    fill: var(--surface);
+    stroke: var(--line);
+  }
+
+  .graticule {
+    fill: none;
+    stroke: var(--line);
+    stroke-width: 0.5;
+  }
+
+  .land {
+    fill: color-mix(in srgb, var(--muted) 30%, var(--surface));
+    stroke: var(--surface);
+    stroke-width: 0.4;
+  }
+
+  .ring {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 1.5;
+  }
+
+  .dot {
+    fill: var(--accent);
+  }
+</style>

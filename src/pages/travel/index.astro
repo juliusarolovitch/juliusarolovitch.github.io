@@ -1,0 +1,113 @@
+---
+import { getCollection } from 'astro:content';
+import { Image } from 'astro:assets';
+import Base from '../../layouts/Base.astro';
+import WorldMap from '../../components/WorldMap.astro';
+import { countryOf } from '../../lib/geo';
+
+const posts = (await getCollection('travel', (p) => !p.data.draft)).sort((a, b) => b.data.date.valueOf() - a.data.date.valueOf());
+const places = await getCollection('places');
+const countries = new Set([...posts, ...places].map((p) => countryOf(p.data.coords, p.data.country)).filter(Boolean));
+const years = [...new Set(posts.map((p) => p.data.date.getUTCFullYear()))];
+---
+
+<Base title="Travel">
+  <header class="page-head">
+    <h1>Travel</h1>
+    <p>
+      I have been to {countries.size} countries, and am working on gathering recommendations for others to benefit from. Coming soon!
+    </p>
+  </header>
+
+  <WorldMap posts={posts} />
+
+  {
+    years.map((year) => (
+      <section>
+        <h2 class="section-title">{year}</h2>
+        <ul class="posts">
+          {posts
+            .filter((p) => p.data.date.getUTCFullYear() === year)
+            .map((p) => (
+              <li>
+                <a href={`/travel/${p.id}/`} class="card">
+                  {p.data.cover ? <Image src={p.data.cover} alt="" width={320} class="cover" /> : <div class="cover blank" />}
+                  <div>
+                    <p class="place">
+                      {p.data.place} ·{' '}
+                      {p.data.date.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' })}
+                    </p>
+                    <h3>{p.data.title}</h3>
+                    {p.data.description && <p class="desc">{p.data.description}</p>}
+                  </div>
+                </a>
+              </li>
+            ))}
+        </ul>
+      </section>
+    ))
+  }
+</Base>
+
+<style>
+  .posts {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 1.5rem;
+  }
+
+  .card {
+    display: grid;
+    grid-template-columns: 8.5rem 1fr;
+    gap: 1.25rem;
+    color: var(--fg);
+  }
+
+  .card:hover {
+    text-decoration: none;
+  }
+
+  .card:hover h3 {
+    color: var(--link);
+  }
+
+  .cover {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+  }
+
+  .blank {
+    background:
+      repeating-linear-gradient(135deg, transparent 0 8px, color-mix(in srgb, var(--accent) 12%, transparent) 8px 9px),
+      var(--surface);
+  }
+
+  .place {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+
+  h3 {
+    font-size: 1.15rem;
+    margin: 0.2rem 0 0.25rem;
+  }
+
+  .desc {
+    margin: 0;
+    color: var(--muted);
+  }
+
+  @media (max-width: 520px) {
+    .card {
+      grid-template-columns: 5.5rem 1fr;
+      gap: 0.9rem;
+    }
+  }
+</style>

@@ -1,0 +1,627 @@
+---
+import { getCollection, type CollectionEntry } from 'astro:content';
+import { getImage } from 'astro:assets';
+import type { ImageMetadata } from 'astro';
+import { geoEqualEarth, geoGraticule10, geoPath } from 'd3-geo';
+import { countries, countryOf } from '../lib/geo';
+
+interface Props {
+  posts: CollectionEntry<'travel'>[];
+}
+
+const { posts } = Astro.props;
+const places = await getCollection('places');
+const photoFiles = import.meta.glob<ImageMetadata>('/src/content/places/*/*.{jpg,jpeg,png,webp,avif,JPG,JPEG,PNG,WEBP}', {
+  eager: true,
+  import: 'default',
+});
+const width = 960;
+const land = { type: 'FeatureCollection' as const, features: countries.filter((c) => c.properties.name !== 'Antarctica') };
+const projection = geoEqualEarth().rotate([-10, 0]).fitWidth(width, land);
+const path = geoPath(projection);
+const height = Math.ceil(path.bounds(land)[1][1]) + 2;
+const visited = new Set([...posts, ...places].map((p) => countryOf(p.data.coords, p.data.country)));
+const at = (coords: [number, number]) => {
+  const [x, y] = projection([coords[1], coords[0]])!;
+  return { x, y, anchor: x < 80 ? 'start' : x > width - 80 ? 'end' : 'middle' };
+};
+const pins = posts.map((p) => ({ ...at(p.data.coords), href: `/travel/${p.id}/`, label: p.data.place }));
+const spots = await Promise.all(
+  places.map(async (p) => {
+    const files = Object.keys(photoFiles)
+      .filter((f) => f.split('/').at(-2) === p.id)
+      .sort();
+    const photos = await Promise.all(
+      files.map(async (f) => ({
+        full: (await getImage({ src: photoFiles[f], width: 1600, format: 'webp' })).src,
+        thumb: (await getImage({ src: photoFiles[f], width: 160, height: 160, fit: 'cover', format: 'webp' })).src,
+      })),
+    );
+    return { ...at(p.data.coords), id: p.id, label: p.data.year ? `${p.data.place} · ${p.data.year}` : p.data.place, place: p.data.place, photos };
+  }),
+);
+const zoomBox = (c: (typeof land.features)[number]) => {
+  const parts =
+    c.geometry.type === 'MultiPolygon'
+      ? c.geometry.coordinates.map((coordinates) => ({ type: 'Polygon' as const, coordinates }))
+      : [c.geometry];
+  const main = parts.reduce((a, b) => (path.area(b) > path.area(a) ? b : a));
+  return path.bounds(main).flat().map((v) => v.toFixed(1)).join(',');
+};
+const gallery = Object.fromEntries(spots.filter((s) => s.photos.length).map((s) => [s.id, { place: s.label, photos: s.photos }]));
+---
+
+<figure class="map" data-map>
+  <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Map of ${posts.length + places.length} places I have been`}>
+    <g data-viewport>
+    <path class="graticule" d={path(geoGraticule10())} />
+    {
+      land.features.map((c) =>
+        visited.has(c.properties.name) ? (
+          <path class="country visited" d={path(c)} data-zoom={zoomBox(c)} tabindex="0" role="button" aria-label={`Zoom to ${c.properties.name}`} />
+        ) : (
+          <path class="country" d={path(c)} />
+        ),
+      )
+    }
+    {
+      spots.map((p) =>
+        p.photos.length ? (
+          <g class="spot has-photos marker" data-spot={p.id} data-x={p.x} data-y={p.y} transform={`translate(${p.x} ${p.y})`} tabindex="0" role="button" aria-label={`Photos from ${p.place}`}>
+            <circle class="ring" r="6.5" />
+            <circle class="spot-dot" r="3" />
+            <text y="-11" text-anchor={p.anchor}>
+              {p.label} · {p.photos.length} photo{p.photos.length > 1 ? 's' : ''}
+            </text>
+          </g>
+        ) : (
+          <g class="spot marker" data-x={p.x} data-y={p.y} transform={`translate(${p.x} ${p.y})`} tabindex="0">
+            <circle class="spot-dot" r="3" />
+            <text y="-9" text-anchor={p.anchor}>
+              {p.label}
+            </text>
+          </g>
+        ),
+      )
+    }
+    {
+      pins.map((p, i) => (
+        <a href={p.href} class="pin marker" style={`--i: ${i}`} data-x={p.x} data-y={p.y} transform={`translate(${p.x} ${p.y})`}>
+          <circle class="pulse" r="9" />
+          <circle class="dot" r="4" />
+          <text y="-12" text-anchor={p.anchor}>
+            {p.label}
+          </text>
+        </a>
+      ))
+    }
+    </g>
+  </svg>
+  <div class="zoom-controls">
+    <button type="button" data-zoom-in aria-label="Zoom in">+</button>
+    <button type="button" data-zoom-out aria-label="Zoom out">−</button>
+    <button type="button" data-zoom-reset aria-label="Reset zoom" hidden>reset</button>
+  </div>
+  <figcaption class="zoom-hint">Click a highlighted country to zoom in. Pinch or ⌘/Ctrl-scroll to zoom, drag to move.</figcaption>
+  {
+    Object.keys(gallery).length > 0 && (
+      <dialog class="lightbox" data-lightbox aria-label="Photos">
+        <div class="lb-head">
+          <span class="lb-title" data-lb-title />
+          <span class="lb-count" data-lb-count />
+          <button type="button" class="lb-close" data-lb-close aria-label="Close">×</button>
+        </div>
+        <div class="lb-stage">
+          <button type="button" class="lb-nav prev" data-lb-prev aria-label="Previous photo">‹</button>
+          <div class="lb-track" data-lb-track />
+          <button type="button" class="lb-nav next" data-lb-next aria-label="Next photo">›</button>
+        </div>
+        <div class="lb-thumbs" data-lb-thumbs />
+        <script type="application/json" data-gallery set:html={JSON.stringify(gallery)} />
+      </dialog>
+    )
+  }
+</figure>
+
+<script>
+  import { select } from 'd3-selection';
+  import { zoom, zoomIdentity, type ZoomTransform } from 'd3-zoom';
+  import 'd3-transition';
+
+  for (const map of document.querySelectorAll<HTMLElement>('[data-map]')) {
+    const svgEl = map.querySelector<SVGSVGElement>('svg')!;
+    const viewport = map.querySelector<SVGGElement>('[data-viewport]')!;
+    const markers = [...map.querySelectorAll<SVGElement>('.marker')];
+    const reset = map.querySelector<HTMLButtonElement>('[data-zoom-reset]')!;
+    const [, , width, height] = svgEl.getAttribute('viewBox')!.split(' ').map(Number);
+    const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    let k = 1;
+    let focused: Element | null = null;
+
+    const behavior = zoom<SVGSVGElement, unknown>()
+      .scaleExtent([1, 40])
+      .translateExtent([
+        [0, 0],
+        [width, height],
+      ])
+      .filter((e: Event) => {
+        if (e.type === 'wheel') return (e as WheelEvent).ctrlKey || (e as WheelEvent).metaKey;
+        if (e.type.startsWith('touch')) return (e as TouchEvent).touches.length > 1 || k > 1.01;
+        return !(e as MouseEvent).button;
+      })
+      .on('zoom', (e: { transform: ZoomTransform }) => {
+        k = e.transform.k;
+        viewport.setAttribute('transform', e.transform.toString());
+        for (const m of markers) m.setAttribute('transform', `translate(${m.dataset.x} ${m.dataset.y}) scale(${1 / k})`);
+        reset.hidden = k <= 1.01;
+        map.classList.toggle('zoomed', k > 1.01);
+      });
+    const svg = select(svgEl);
+    svg.call(behavior).on('dblclick.zoom', null);
+    const animate = () => svg.transition().duration(reduced ? 0 : 750);
+
+    const zoomTo = (target: Element) => {
+      if (focused === target) {
+        focused = null;
+        animate().call(behavior.transform, zoomIdentity);
+        return;
+      }
+      focused = target;
+      const [x0, y0, x1, y1] = (target as SVGElement).dataset.zoom!.split(',').map(Number);
+      const scale = Math.min(40, 0.85 / Math.max((x1 - x0) / width, (y1 - y0) / height));
+      animate().call(behavior.transform, zoomIdentity.translate(width / 2, height / 2).scale(scale).translate(-(x0 + x1) / 2, -(y0 + y1) / 2));
+    };
+
+    for (const c of map.querySelectorAll<SVGPathElement>('.country.visited')) {
+      c.addEventListener('click', () => zoomTo(c));
+      c.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          zoomTo(c);
+        }
+      });
+    }
+    map.querySelector('[data-zoom-in]')!.addEventListener('click', () => animate().call(behavior.scaleBy, 2));
+    map.querySelector('[data-zoom-out]')!.addEventListener('click', () => animate().call(behavior.scaleBy, 0.5));
+    reset.addEventListener('click', () => {
+      focused = null;
+      animate().call(behavior.transform, zoomIdentity);
+    });
+  }
+
+  for (const map of document.querySelectorAll<HTMLElement>('[data-map]')) {
+    const dialog = map.querySelector<HTMLDialogElement>('[data-lightbox]');
+    if (!dialog) continue;
+    const gallery: Record<string, { place: string; photos: { full: string; thumb: string }[] }> = JSON.parse(
+      dialog.querySelector('[data-gallery]')!.textContent!,
+    );
+    const track = dialog.querySelector<HTMLElement>('[data-lb-track]')!;
+    const thumbs = dialog.querySelector<HTMLElement>('[data-lb-thumbs]')!;
+    const count = dialog.querySelector<HTMLElement>('[data-lb-count]')!;
+    let total = 0;
+
+    const index = () => Math.round(track.scrollLeft / Math.max(1, track.clientWidth));
+    const go = (i: number, smooth = true) =>
+      track.scrollTo({ left: Math.max(0, Math.min(total - 1, i)) * track.clientWidth, behavior: smooth ? 'smooth' : 'auto' });
+    const sync = () => {
+      const i = index();
+      count.textContent = `${i + 1} / ${total}`;
+      [...thumbs.children].forEach((t, k) => t.classList.toggle('active', k === i));
+    };
+
+    const show = (id: string) => {
+      const g = gallery[id];
+      if (!g) return;
+      total = g.photos.length;
+      dialog.querySelector('[data-lb-title]')!.textContent = g.place;
+      track.replaceChildren(
+        ...g.photos.map((p, i) => {
+          const img = document.createElement('img');
+          img.src = p.full;
+          img.alt = `${g.place}, photo ${i + 1} of ${g.photos.length}`;
+          img.loading = i < 2 ? 'eager' : 'lazy';
+          img.decoding = 'async';
+          const slide = document.createElement('div');
+          slide.className = 'lb-slide';
+          slide.append(img);
+          return slide;
+        }),
+      );
+      thumbs.replaceChildren(
+        ...g.photos.map((p, i) => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.setAttribute('aria-label', `Photo ${i + 1}`);
+          const img = document.createElement('img');
+          img.src = p.thumb;
+          img.alt = '';
+          b.append(img);
+          b.addEventListener('click', () => go(i));
+          return b;
+        }),
+      );
+      thumbs.hidden = total < 2;
+      dialog.querySelectorAll<HTMLElement>('.lb-nav').forEach((b) => (b.hidden = total < 2));
+      dialog.showModal();
+      go(0, false);
+      sync();
+    };
+
+    track.addEventListener('scroll', () => requestAnimationFrame(sync), { passive: true });
+    dialog.querySelector('[data-lb-prev]')!.addEventListener('click', () => go(index() - 1));
+    dialog.querySelector('[data-lb-next]')!.addEventListener('click', () => go(index() + 1));
+    dialog.querySelector('[data-lb-close]')!.addEventListener('click', () => dialog.close());
+    dialog.addEventListener('click', (e) => e.target === dialog && dialog.close());
+    dialog.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight') go(index() + 1);
+      if (e.key === 'ArrowLeft') go(index() - 1);
+    });
+    for (const spot of map.querySelectorAll<SVGGElement>('[data-spot]')) {
+      spot.addEventListener('click', () => show(spot.dataset.spot!));
+      spot.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          show(spot.dataset.spot!);
+        }
+      });
+    }
+  }
+</script>
+
+<style>
+  .map {
+    position: relative;
+    margin: 1.5rem 0 0;
+  }
+
+  svg {
+    touch-action: pan-y;
+    border-radius: 8px;
+  }
+
+  .map.zoomed svg {
+    cursor: grab;
+  }
+
+  .map.zoomed svg:active {
+    cursor: grabbing;
+  }
+
+  .country,
+  .graticule {
+    vector-effect: non-scaling-stroke;
+  }
+
+  .country.visited {
+    cursor: zoom-in;
+    outline: none;
+    transition: fill 0.15s ease;
+  }
+
+  .country.visited:hover,
+  .country.visited:focus-visible {
+    fill: color-mix(in srgb, var(--accent) 65%, var(--bg));
+  }
+
+  .zoom-controls {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+
+  .zoom-controls button {
+    min-width: 2rem;
+    height: 2rem;
+    padding: 0 0.5rem;
+    font: inherit;
+    font-size: 1rem;
+    line-height: 1;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--surface) 90%, transparent);
+    color: var(--fg);
+    cursor: pointer;
+  }
+
+  .zoom-controls button[data-zoom-reset] {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+  }
+
+  .zoom-controls button[hidden] {
+    display: none;
+  }
+
+  .zoom-controls button:hover {
+    border-color: var(--accent);
+  }
+
+  .zoom-hint {
+    margin-top: 0.4rem;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--muted);
+  }
+
+  svg {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  .graticule {
+    fill: none;
+    stroke: var(--line);
+    stroke-width: 0.6;
+  }
+
+  .country {
+    fill: color-mix(in srgb, var(--muted) 22%, var(--bg));
+    stroke: var(--bg);
+    stroke-width: 0.6;
+  }
+
+  .country.visited {
+    fill: color-mix(in srgb, var(--accent) 45%, var(--bg));
+  }
+
+  .dot {
+    fill: var(--accent);
+    stroke: var(--bg);
+    stroke-width: 1.5;
+    transition: r 0.2s ease;
+  }
+
+  .pulse {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 1.5;
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: pulse 2.4s ease-out infinite;
+    animation-delay: calc(var(--i) * 300ms);
+  }
+
+  text {
+    font: 600 13px var(--sans);
+    fill: var(--fg);
+    paint-order: stroke;
+    stroke: var(--bg);
+    stroke-width: 4px;
+    stroke-linejoin: round;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    pointer-events: none;
+  }
+
+  .pin:hover text,
+  .pin:focus-visible text {
+    opacity: 1;
+  }
+
+  .pin:hover .dot {
+    r: 6;
+  }
+
+  @keyframes pulse {
+    from {
+      transform: scale(0.4);
+      opacity: 0.9;
+    }
+    to {
+      transform: scale(2.2);
+      opacity: 0;
+    }
+  }
+
+  .spot-dot {
+    fill: var(--fg);
+    stroke: var(--bg);
+    stroke-width: 1.2;
+  }
+
+  .spot .ring {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 1.6;
+  }
+
+  .spot {
+    outline: none;
+  }
+
+  .spot.has-photos {
+    cursor: pointer;
+  }
+
+  .spot:hover text,
+  .spot:focus-visible text {
+    opacity: 1;
+  }
+
+  .spot.has-photos:hover .ring,
+  .spot.has-photos:focus-visible .ring {
+    stroke-width: 2.6;
+  }
+
+  .lightbox {
+    width: min(92vw, 1000px);
+    max-height: 92vh;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface);
+    color: var(--fg);
+    overflow: hidden;
+  }
+
+  .lightbox::backdrop {
+    background: rgb(0 0 0 / 0.6);
+    backdrop-filter: blur(3px);
+  }
+
+  .lightbox[open] {
+    display: flex;
+    flex-direction: column;
+    animation: lb-in 0.25s ease-out both;
+  }
+
+  .lb-head {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.7rem 0.9rem 0.7rem 1.1rem;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .lb-title {
+    font-family: var(--serif);
+    font-weight: 600;
+  }
+
+  .lb-count {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+
+  .lb-close {
+    font-size: 1.4rem;
+    line-height: 1;
+    padding: 0.1rem 0.5rem;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+  }
+
+  .lb-close:hover {
+    color: var(--fg);
+  }
+
+  .lb-stage {
+    position: relative;
+    background: var(--bg);
+  }
+
+  .lb-track {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+    height: min(68vh, 620px);
+  }
+
+  .lb-track::-webkit-scrollbar {
+    display: none;
+  }
+
+  .lb-track :global(.lb-slide) {
+    flex: 0 0 100%;
+    scroll-snap-align: center;
+    display: grid;
+    place-items: center;
+  }
+
+  .lb-track :global(img) {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+
+  .lb-nav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 2.6rem;
+    height: 2.6rem;
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--surface) 85%, transparent);
+    color: var(--fg);
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+    z-index: 1;
+  }
+
+  .lb-nav:hover {
+    border-color: var(--accent);
+  }
+
+  .lb-nav.prev {
+    left: 0.75rem;
+  }
+
+  .lb-nav.next {
+    right: 0.75rem;
+  }
+
+  .lb-thumbs {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.7rem 0.9rem;
+    overflow-x: auto;
+    border-top: 1px solid var(--line);
+  }
+
+  .lb-thumbs[hidden],
+  .lb-nav[hidden] {
+    display: none;
+  }
+
+  .lb-thumbs :global(button) {
+    flex: none;
+    padding: 0;
+    border: 2px solid transparent;
+    border-radius: 6px;
+    background: none;
+    cursor: pointer;
+    opacity: 0.6;
+  }
+
+  .lb-thumbs :global(button.active) {
+    border-color: var(--accent);
+    opacity: 1;
+  }
+
+  .lb-thumbs :global(img) {
+    display: block;
+    width: 3.6rem;
+    height: 3.6rem;
+    object-fit: cover;
+    border-radius: 4px;
+  }
+
+  @keyframes lb-in {
+    from {
+      opacity: 0;
+      transform: scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @media (max-width: 560px) {
+    .lb-nav {
+      display: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .pulse {
+      animation: none;
+      opacity: 0;
+    }
+
+    .lightbox[open] {
+      animation: none;
+    }
+  }
+</style>

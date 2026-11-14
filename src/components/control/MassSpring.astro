@@ -1,0 +1,202 @@
+---
+import katex from 'katex';
+
+const tex = (s: string) => katex.renderToString(s);
+---
+
+<figure class="viz" data-spring>
+  <div class="viz-controls">
+    <label><Fragment set:html={tex(String.raw`\sigma`)} /> <input type="range" min="-1" max="0" step="0.01" value="-0.38" data-sigma /><output data-sigma-out></output></label>
+    <label>frequency <input type="range" min="0.5" max="2" step="0.05" value="1" data-freq /><output data-freq-out></output></label>
+  </div>
+  <canvas data-scene role="img" aria-label="A mass on a spring sliding back and forth"></canvas>
+  <div class="spring-grid">
+    <canvas data-trace role="img" aria-label="Position of the mass over time"></canvas>
+    <canvas data-phase role="img" aria-label="Position against scaled velocity"></canvas>
+  </div>
+</figure>
+
+<style>
+  .spring-grid {
+    display: grid;
+    grid-template-columns: 1.6fr 1fr;
+    gap: 1rem;
+    margin-top: 0.75rem;
+  }
+
+  @media (max-width: 640px) {
+    .spring-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<script>
+  import { scaleLinear } from 'd3-scale';
+  import { fitCanvas, panel, redrawOn, theme } from '../../lib/viz';
+
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const span = 4;
+
+  for (const root of document.querySelectorAll<HTMLElement>('[data-spring]')) {
+    const scene = root.querySelector<HTMLCanvasElement>('[data-scene]')!;
+    const trace = root.querySelector<HTMLCanvasElement>('[data-trace]')!;
+    const phase = root.querySelector<HTMLCanvasElement>('[data-phase]')!;
+    const sIn = root.querySelector<HTMLInputElement>('[data-sigma]')!;
+    const fIn = root.querySelector<HTMLInputElement>('[data-freq]')!;
+    let now = reduced ? span : 0;
+    let visible = false;
+
+    const draw = () => {
+      const t = theme();
+      const sigma = Number(sIn.value);
+      const omega = 2 * Math.PI * Number(fIn.value);
+      root.querySelector<HTMLOutputElement>('[data-sigma-out]')!.value = sigma.toFixed(2);
+      root.querySelector<HTMLOutputElement>('[data-freq-out]')!.value = `${Number(fIn.value).toFixed(2)} Hz`;
+      const x = (tt: number) => Math.exp(sigma * tt) * Math.cos(omega * tt);
+      const v = (tt: number) => Math.exp(sigma * tt) * ((sigma / omega) * Math.cos(omega * tt) - Math.sin(omega * tt));
+      const tc = Math.min(now, span);
+      const samples = Array.from({ length: 401 }, (_, i) => (i / 400) * span).filter((s) => s <= tc);
+
+      {
+        const { ctx, width } = fitCanvas(scene, 110);
+        const floor = 92;
+        const wall = 22;
+        const rest = width / 2;
+        const amp = Math.min(150, width * 0.28);
+        const mx = rest + amp * x(tc);
+        ctx.fillStyle = t.muted;
+        ctx.globalAlpha = 0.25;
+        ctx.fillRect(4, 12, wall - 4, floor - 12);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = t.muted;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(wall, 12);
+        ctx.lineTo(wall, floor);
+        ctx.lineTo(width - 4, floor);
+        ctx.stroke();
+        ctx.setLineDash([4, 4]);
+        ctx.lineWidth = 1.2;
+        ctx.strokeRect(rest - 30, floor - 50, 60, 48);
+        ctx.setLineDash([]);
+        ctx.fillStyle = t.muted;
+        ctx.font = `11px ${t.mono}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText('rest', rest, floor - 54);
+
+        const coils = 12;
+        const y0 = floor - 26;
+        ctx.strokeStyle = t.accent;
+        ctx.lineWidth = 1.8;
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.moveTo(wall, y0);
+        const sx0 = wall + 12;
+        const sx1 = mx - 30 - 10;
+        ctx.lineTo(sx0, y0);
+        for (let i = 0; i < coils; i++) ctx.lineTo(sx0 + ((i + 0.5) / coils) * (sx1 - sx0), y0 + (i % 2 ? 9 : -9));
+        ctx.lineTo(sx1, y0);
+        ctx.lineTo(mx - 30, y0);
+        ctx.stroke();
+
+        ctx.fillStyle = t.surface;
+        ctx.strokeStyle = t.fg;
+        ctx.lineWidth = 1.8;
+        ctx.fillRect(mx - 30, floor - 50, 60, 48);
+        ctx.strokeRect(mx - 30, floor - 50, 60, 48);
+        ctx.fillStyle = t.fg;
+        ctx.font = `600 12px ${t.mono}`;
+        ctx.textBaseline = 'middle';
+        ctx.fillText('mass', mx, floor - 26);
+      }
+
+      {
+        const { ctx, width } = fitCanvas(trace, 220);
+        const box = { x: 36, y: 8, w: width - 46, h: 180 };
+        const { x: px, y: py } = panel(ctx, box, [0, span], [-1.15, 1.15], 'position over time');
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = t.muted;
+        ctx.lineWidth = 1.2;
+        for (const sign of [1, -1]) {
+          ctx.beginPath();
+          for (let i = 0; i <= 100; i++) {
+            const s = (i / 100) * span;
+            if (i) ctx.lineTo(px(s), py(sign * Math.exp(sigma * s)));
+            else ctx.moveTo(px(s), py(sign * Math.exp(sigma * s)));
+          }
+          ctx.stroke();
+        }
+        ctx.setLineDash([]);
+        ctx.strokeStyle = t.accent;
+        ctx.lineWidth = 2.4;
+        ctx.beginPath();
+        samples.forEach((s, i) => (i ? ctx.lineTo(px(s), py(x(s))) : ctx.moveTo(px(s), py(x(s)))));
+        ctx.stroke();
+        ctx.fillStyle = t.muted;
+        ctx.font = `11px ${t.mono}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        for (const s of [0, 1, 2, 3, 4]) ctx.fillText(`${s} s`, px(s), box.y + box.h + 6);
+      }
+
+      {
+        const width = phase.clientWidth;
+        const size = Math.min(width, 220);
+        const { ctx } = fitCanvas(phase, 220);
+        const sx = scaleLinear().domain([-1.2, 1.2]).range([width / 2 - size / 2 + 6, width / 2 + size / 2 - 6]);
+        const sy = scaleLinear().domain([-1.2, 1.2]).range([214, 6]);
+        ctx.strokeStyle = t.muted;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(sx(-1.2), sy(0));
+        ctx.lineTo(sx(1.2), sy(0));
+        ctx.moveTo(sx(0), sy(-1.2));
+        ctx.lineTo(sx(0), sy(1.2));
+        ctx.stroke();
+        ctx.fillStyle = t.muted;
+        ctx.font = `11px ${t.mono}`;
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText('position', sx(1.2), sy(0) - 3);
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.fillText('scaled velocity', sx(0) + 5, sy(1.2));
+        ctx.strokeStyle = t.accent;
+        ctx.lineWidth = 2.2;
+        ctx.beginPath();
+        samples.forEach((s, i) => (i ? ctx.lineTo(sx(x(s)), sy(v(s))) : ctx.moveTo(sx(x(s)), sy(v(s)))));
+        ctx.stroke();
+        ctx.fillStyle = t.accent;
+        ctx.beginPath();
+        ctx.arc(sx(x(tc)), sy(v(tc)), 4.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    };
+
+    const restart = () => {
+      now = reduced ? span : 0;
+      draw();
+    };
+
+    sIn.addEventListener('input', restart);
+    fIn.addEventListener('input', restart);
+    redrawOn(trace, draw);
+
+    if (!reduced) {
+      new IntersectionObserver(([e]) => (visible = e.isIntersecting)).observe(scene);
+      let last = performance.now();
+      const loop = (stamp: number) => {
+        const dt = Math.min(0.05, (stamp - last) / 1000);
+        last = stamp;
+        if (visible) {
+          now = now > span + 1.2 ? 0 : now + dt;
+          draw();
+        }
+        requestAnimationFrame(loop);
+      };
+      requestAnimationFrame(loop);
+    }
+  }
+</script>

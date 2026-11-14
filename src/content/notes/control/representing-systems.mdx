@@ -1,0 +1,262 @@
+---
+title: Representing dynamic systems
+updated: 2026-10-31
+order: 4
+draft: true
+---
+
+import PhasePortrait from '../../../components/control/PhasePortrait.astro';
+import BicopterSensor from '../../../components/control/BicopterSensor.astro';
+import MixerDiagram from '../../../components/control/MixerDiagram.astro';
+
+Before we can predict how a particular system will move, we must write it down. There is more than one way to do so.
+
+Consider a bathtub with the plug partly open. We can describe it by a balance: the water level rises when more water flows in than drains out. We can describe it by its memory: given the flow from the tap, everything we need to know to predict its future is the present level. Or we can describe it by what it does to an input: open the tap a little further, and the level slowly rises by a proportional amount. These are three descriptions of one bathtub. Here we name them the **differential equation**, the **state-space model**, and the **transfer function**.
+
+None of the three is more correct than the others. When they are derived from the same assumptions, they predict the same behavior. Each makes a different question easy to answer, much as a street map and a subway map show the same city.
+
+## Differential equations
+
+Most models begin with a physical balance law: conservation of mass, of energy, or of momentum. The law tells us how a stored quantity changes, and that change is what gives a system its memory.
+
+Imagine a tank of water with a tap above it and a long, narrow drain pipe at its base. Let $y(t)$ be the water level and $u(t)$ the inflow from the tap, measured as a volume per second. Before writing any equation, we can already describe the behavior. If more water enters than leaves, the level rises. If more leaves than enters, it falls. Because a higher level pushes water through the drain faster, the level eventually settles where the outflow matches the inflow.
+
+Now translate the story into symbols. Let $a$ be the cross-sectional area of the tank. Raising the level by a small amount $\mathrm{d}y$ adds a volume $a\,\mathrm{d}y$, so the stored volume changes at the rate $a\dot y$. For a long, narrow drain, the outflow is roughly proportional to the level; call it $k_dy$, where the constant $k_d$ describes how freely the drain passes water. Conservation of water states that
+
+$$
+\text{rate of change of stored water}=\text{inflow}-\text{outflow},
+$$
+
+or
+
+$$
+a\dot y=u-k_dy.
+$$
+
+This is a **differential equation**: it relates a quantity to its own rate of change. It does not give the level directly. Instead, it tells us how the level is changing at every instant, given the level and the inflow at that instant.
+
+Read the equation term by term. A larger inflow makes the level rise faster. A higher level makes the drain remove water faster, which slows the rise. A wider tank needs more water for the same change in level, so its level moves more slowly.
+
+Two combinations of the constants describe the behavior. Divide by $k_d$ and define
+
+$$
+\tau=\frac{a}{k_d}, \qquad K=\frac{1}{k_d}.
+$$
+
+The balance becomes
+
+$$
+\tau\dot y+y=Ku, \qquad\text{or equivalently}\qquad \dot y=\frac{Ku-y}{\tau}.
+$$
+
+The second form reads as a behavior. For a constant inflow $u$, the level $Ku$ is the **equilibrium**: the level at which drain and tap balance, so that $\dot y=0$. The level moves toward this equilibrium at a rate proportional to its remaining distance from it. The constant $\tau$ has units of seconds and is called the **time constant**. The constant $K$ is the **steady-state gain**: the equilibrium level per unit of inflow.
+
+To solve the equation, hold the inflow constant and call the remaining distance from equilibrium $g(t)=y(t)-Ku$. Since $Ku$ does not change, $\dot g=\dot y=-g/\tau$, so the gap decays exponentially, $g(t)=g(0)e^{-t/\tau}$. Converting back from gap to level gives
+
+$$
+y(t)=Ku+\bigl(y(0)-Ku\bigr)e^{-t/\tau}.
+$$
+
+The tank has a single mode: a decay toward equilibrium that does not oscillate. Whether the tank starts empty or overfull, the gap shrinks by the same fraction during every interval of $\tau$ seconds. After one time constant, about $63\%$ of the gap has closed, since $1-e^{-1}\approx0.63$. After four, about $98\%$ has closed.
+
+To predict the future, the equation needs one number besides the inflow: the starting level $y(0)$. The tank has one store of water, so it is a [first-order system](/notes/control/system-order/). A second-order equation, such as Newton's law for a moving mass, would also need an initial velocity.
+
+The tank equation is not really about water. A heated block with heat capacity $C$ stores energy and leaks heat to the air at the rate $y/R$. An energy balance gives $C\dot y=u-y/R$, or
+
+$$
+RC\,\dot y+y=Ru.
+$$
+
+This is the tank equation with $\tau=RC$ and $K=R$. The same equation describes a capacitor charged through a resistor, a cup of coffee cooling on a desk, and many other systems with one store and one leak. Learning one of them teaches all of them.
+
+| System | What is stored | Input | Leak | $\tau$ and $K$ |
+| --- | --- | --- | --- | --- |
+| Tank | water volume $ay$ | inflow $u$ | drain flow $k_dy$ | $\tau=a/k_d$, $K=1/k_d$ |
+| Heated block | heat $Cy$ | heater power $u$ | heat flow $y/R$ | $\tau=RC$, $K=R$ |
+| RC circuit | charge $Cv$ | current source $i$ | resistor current $v/R$ | $\tau=RC$, $K=R$ |
+| Coffee cup | heat | none; room sets the target | heat flow to room | $\tau$ from data |
+
+Differential equations are the natural starting point whenever physical laws, units, and parameter values matter. Their weakness is that every system arrives in its own shape: a second-order equation for a mass, two coupled equations for a bicopter's two arms, a third-order equation for three tanks in a row. We would like one standard form into which all of them fit.
+
+## State space
+
+Let a cart of mass $m$ be attached to a wall by a spring of stiffness $k$ and a damper with coefficient $c$, and let $F(t)$ be a force applied to the cart. With $x(t)$ its displacement from rest, Newton's second law gives
+
+$$
+m\ddot x+c\dot x+kx=F.
+$$
+
+This equation contains a second derivative because the cart remembers two things: its position and its velocity. Let us make that memory explicit. Choose the **state variables**
+
+$$
+x_1=x, \qquad x_2=\dot x.
+$$
+
+Each changes according to a first-order rule. Position changes at the rate given by velocity. Velocity changes at the rate given by the net force divided by the mass:
+
+$$
+\begin{aligned}
+\dot x_1&=x_2,\\
+\dot x_2&=-\frac{k}{m}x_1-\frac{c}{m}x_2+\frac{1}{m}F.
+\end{aligned}
+$$
+
+Nothing new has been added. We have only split one second-order equation into two first-order ones, each of which tells us how one piece of memory changes.
+
+The two rules have the same shape: each rate is a weighted sum of the state variables and the input. A matrix stores such weights compactly. Stacking the two rules gives
+
+$$
+\underbrace{\begin{bmatrix}\dot x_1\\\dot x_2\end{bmatrix}}_{\dot{\mathbf{x}}}
+=
+\underbrace{\begin{bmatrix}0&1\\-k/m&-c/m\end{bmatrix}}_{A}
+\underbrace{\begin{bmatrix}x_1\\x_2\end{bmatrix}}_{\mathbf{x}}
++
+\underbrace{\begin{bmatrix}0\\1/m\end{bmatrix}}_{B}F.
+$$
+
+The first row of the matrix holds the first rule, and the second row holds the second.
+
+Replacing the cart's particular entries with general matrices gives the **state-space form**:
+
+$$
+\begin{aligned}
+\dot{\mathbf{x}}&=A\mathbf{x}+B\mathbf{u},\\
+\mathbf{y}&=C\mathbf{x}+D\mathbf{u}.
+\end{aligned}
+$$
+
+The vector $\mathbf{x}$ collects every state variable, $\mathbf{u}$ collects the inputs, and $\mathbf{y}$ collects the outputs. Each matrix has a plain meaning:
+
+- The **state matrix** $A$ describes how the stored quantities drive one another.
+- The **input matrix** $B$ describes where the inputs push.
+- The **output matrix** $C$ describes which combinations of the state the sensors report.
+- The **feedthrough matrix** $D$ describes any path by which an input reaches an output instantly, without passing through memory.
+
+If we measure the cart's position, then $y=x_1$, so $C=\begin{bmatrix}1&0\end{bmatrix}$ and $D=0$. If we instead mount an accelerometer on the cart, it reports $\ddot x=\dot x_2$. Reading off the second rule gives $C=\begin{bmatrix}-k/m&-c/m\end{bmatrix}$ and $D=1/m$: a push changes the acceleration the instant it is applied, before position or velocity has had time to change. The tank fits the same form with the single state $x=y$ and $A=-1/\tau$, $B=K/\tau$, $C=1$, $D=0$.
+
+The form also suggests a geometric picture. With no applied force, the two rules assign an arrow $(\dot x_1,\dot x_2)$ to every possible state $(x_1,x_2)$: the direction in which the state will move next. Drawing many such arrows gives a **vector field**. Releasing the cart from one initial state selects one path, which follows the arrows.
+
+Things to try below:
+
+- Click anywhere in the plane to release the cart from that state. Every path follows the arrows and spirals into rest at the origin.
+- Drag $c/m$ to zero. With no damper, the paths close into ellipses - the cart oscillates forever. Push it slightly negative and the spiral unwinds outward.
+- Raise $c/m$ until the spiral disappears and the paths slide straight into the origin. The status line shows the eigenvalues of $A$ turning from a complex pair into two real numbers right as this happens - more on this in [poles and the characteristic equation](/notes/control/poles/).
+
+<PhasePortrait />
+
+Each arrow is a short-term forecast. Starting from $\mathbf{x}(t)$, a short time $\Delta t$ later the state is approximately
+
+$$
+\mathbf{x}(t+\Delta t)\approx\mathbf{x}(t)+\Delta t\,\bigl(A\mathbf{x}(t)+B\mathbf{u}(t)\bigr).
+$$
+
+Repeating this step many times traces the path in the figure. This is, in essence, how a computer simulates a dynamic system. It is one reason that state space is the standard form for simulation and for computer-aided design.
+
+### Two rotors, one sensor
+
+State space is most useful when a system has several pieces of memory and its sensors cannot see all of them. Consider a bicopter: a light beam with a motor and rotor at each end, the two-dimensional cousin of a quadrotor. The beam can **heave**, moving up or down as a whole, and it can **roll**, one arm rising while the other falls. Drag slows the heave, roll damping slows the roll, and a single vertical-speed sensor sits at the center of the beam.
+
+Let $v_L$ and $v_R$ be the vertical speeds of the left and right arms, and let $u_L$ and $u_R$ be the two rotor commands, all measured from hover, so that $u_L=u_R=0$ exactly holds the bicopter's weight. Treat the motors as two equal masses at the ends of the beam; then each rotor's thrust accelerates only its own arm. Suppose roll is damped three times as strongly as heave. In terms of the heave speed $h=\tfrac12(v_L+v_R)$ and the arm speed due to roll $r=\tfrac12(v_R-v_L)$, after choosing convenient units,
+
+$$
+\dot h=-h+\tfrac12(u_L+u_R), \qquad \dot r=-3r+\tfrac12(u_R-u_L).
+$$
+
+Written for each arm, with $v_L=h-r$ and $v_R=h+r$, the two balances are
+
+$$
+\begin{aligned}
+\dot v_L&=-v_L+(v_R-v_L)+u_L=-2v_L+v_R+u_L,\\
+\dot v_R&=-v_R+(v_L-v_R)+u_R=v_L-2v_R+u_R.
+\end{aligned}
+$$
+
+Each arm loses speed to drag in proportion to its own speed, and roll damping pulls the two arm speeds toward each other. Now let the controller command only the **collective throttle** $u$, the same thrust on both rotors, so that $u_L=u_R=u$. The sensor reports $y=\tfrac12v_L+\tfrac12v_R$. With the state $\mathbf{x}=\begin{bmatrix}v_L&v_R\end{bmatrix}^\mathsf{T}$, the model is
+
+$$
+A=\begin{bmatrix}-2&1\\1&-2\end{bmatrix}, \qquad
+B=\begin{bmatrix}1\\1\end{bmatrix}, \qquad
+C=\begin{bmatrix}\tfrac12&\tfrac12\end{bmatrix}, \qquad
+D=0.
+$$
+
+Now compare two situations with the throttle held at hover. In the first, the left arm is rising at two units of speed and the right arm is not moving. In the second, both arms are rising at one unit. The sensor reads one unit in both cases, yet the bicopter is clearly in different conditions. In the first, the beam is rolling; in the second, it climbs level.
+
+Something more surprising happens as time passes. The sensor's readings remain identical in both situations forever, while the arms themselves behave differently. Add the two balances to see why: the heave speed $h$ obeys $\dot h=-h+u$. Roll only moves one arm up and the other down; it cannot change their average. No record from this sensor, however long, can tell the two situations apart.
+
+Below, both situations fly side by side. Press replay and watch the two sensor traces lie exactly on top of each other, while the first bicopter ends up tilted and the second level - its roll speed decays, but nothing ever levels the beam again.
+
+<BicopterSensor />
+
+This is the sense in which a measurement is not a state. The state is everything the system remembers; the output is only what our sensors happen to report. The state-space model keeps both, and keeps them separate: $A$ and $B$ describe the bicopter, while $C$ describes the sensor.
+
+The choice of state variables is not unique. For the bicopter we could equally use the heave speed $h$ and the roll speed $r$, and these turn out to be the natural choice, as [poles and the characteristic equation](/notes/control/poles/) shows. Flight controllers make the same choice for their inputs. Rather than commanding each rotor directly, they command a collective thrust $u_c$ and a differential thrust $u_d$, and a **mixer** converts these into rotor commands:
+
+<MixerDiagram />
+
+## Transfer functions
+
+State space keeps every piece of memory in view. Often, though, a design question concerns one path through the system. How does the throttle affect the sensor reading? How does a gust of wind move a camera? For such questions it is convenient to have a description that summarizes one input-output path and leaves out the internal detail.
+
+The key is the pattern $e^{st}$, which has a special property: differentiating it only multiplies it by $s$,
+
+$$
+\frac{\mathrm{d}}{\mathrm{d}t}e^{st}=se^{st}.
+$$
+
+A derivative depends on how a signal changes from moment to moment. For this one pattern, it becomes multiplication by a number. Let us use this property on the tank.
+
+Suppose the inflow follows the pattern $u(t)=Ue^{st}$, for some complex rate $s$ and some constant $U$. We look for a level that follows the same pattern, $y(t)=Ye^{st}$. Substituting both into $\tau\dot y+y=Ku$ gives
+
+$$
+\tau sYe^{st}+Ye^{st}=KUe^{st}.
+$$
+
+The factor $e^{st}$ appears in every term and cancels, which leaves an ordinary algebraic equation, $(\tau s+1)Y=KU$. The ratio of the output's size to the input's size is therefore
+
+$$
+G(s)=\frac{Y}{U}=\frac{K}{\tau s+1}.
+$$
+
+This is the **transfer function** from $u$ to $y$. It answers one question: if the input follows the pattern $e^{st}$, by what complex factor does the system multiply it? The calculation works for any system described by linear differential equations with constant coefficients. Substitute the pattern, and every derivative becomes a factor of $s$. The Laplace transform is the reason it works for every input, not just for $e^{st}$: at zero initial state, $Y(s)=G(s)U(s)$.
+
+Evaluating $G$ at particular values of $s$ answers physical questions:
+
+- At $s=0$, the pattern $e^{0t}=1$ is a constant inflow. Then $G(0)=K$, which is exactly the equilibrium level per unit of inflow found above. In general, for a stable system, $G(0)$ is the **steady-state gain**.
+- At $s=j\omega$, the pattern is a steady rotation: the complex form of a sinusoid. $G(j\omega)$ tells us how the level responds when the tap is opened and closed periodically. Since $|G(j\omega)|=K/\sqrt{1+(\omega\tau)^2}$ shrinks as $\omega$ grows, a rapidly varying tap barely changes the level: the tank smooths it out.
+- At $s=-1/\tau$, the denominator is zero and $G$ becomes infinite. An infinite ratio means the tank can produce the pattern $e^{-t/\tau}$ with no input at all. That is its natural mode, which we found earlier from the differential equation. Such values of $s$ are called [poles](/notes/control/poles/).
+
+> **Intuition.** Think of a transfer function as a lookup table. For every pattern $e^{st}$ that an input might follow, it gives the factor by which the system scales and rotates that pattern. The patterns for which the factor is infinite are motions the system can produce on its own. The converse can fail: a single input-output path can hide some free motions, as the bicopter will show.
+
+The same substitution works on the state-space form. Let $\mathbf{u}=Ue^{st}$ and $\mathbf{x}=\mathbf{X}e^{st}$, where $\mathbf{X}$ is a constant vector. Then $\dot{\mathbf{x}}=A\mathbf{x}+B\mathbf{u}$ becomes $s\mathbf{X}=A\mathbf{X}+BU$. Collecting the terms in $\mathbf{X}$ gives $(sI-A)\mathbf{X}=BU$, where $I$ is the identity matrix, so $\mathbf{X}=(sI-A)^{-1}BU$. Substituting into the output equation gives the transfer function of any state-space model:
+
+$$
+\boxed{G(s)=C(sI-A)^{-1}B+D.}
+$$
+
+For the cart, the direct route is quicker. Substitute $F=Ue^{st}$ and $x=Ye^{st}$ into $m\ddot x+c\dot x+kx=F$. Each derivative becomes a factor of $s$, so $(ms^2+cs+k)Y=U$ and
+
+$$
+G(s)=\frac{1}{ms^2+cs+k}.
+$$
+
+The formula with the cart's matrices gives the same result.
+
+One system usually has several transfer functions, one for each input-output path. If the cart's sensor measures velocity instead of position, each pattern is multiplied once more by $s$, which gives $s/(ms^2+cs+k)$. The accelerometer gives $s^2/(ms^2+cs+k)$. The cart has not changed; only the question has.
+
+Now apply the formula to the bicopter:
+
+$$
+sI-A=\begin{bmatrix}s+2&-1\\-1&s+2\end{bmatrix}, \qquad
+(sI-A)^{-1}=\frac{1}{(s+1)(s+3)}\begin{bmatrix}s+2&1\\1&s+2\end{bmatrix}.
+$$
+
+Multiplying by $B$ and then by $C$ gives
+
+$$
+G(s)=\frac{s+3}{(s+1)(s+3)}=\frac{1}{s+1}.
+$$
+
+The bicopter holds two pieces of memory, but the transfer function from collective throttle to sensor is first order. The cancelled factor $s+3$ belongs to roll, the pattern in which one arm moves faster than the other. The collective throttle pushes both arms equally, so it never creates such a difference, and the sensor sits at the center, so it never sees one. The pattern disappears from this path. It does not disappear from the bicopter.
+
+> **Watch out.** A transfer function is a deliberately compressed view. It describes one path, starting from rest, and it can hide internal motion that the chosen input does not excite or the chosen output does not see. When initial conditions, internal limits, or several sensors and actuators matter, keep a state-space model as well.

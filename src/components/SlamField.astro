@@ -1,0 +1,384 @@
+<canvas class="slam" data-slam aria-hidden="true"></canvas>
+
+<style>
+  .slam {
+    position: absolute;
+    top: -6rem;
+    left: 50%;
+    width: 100vw;
+    height: calc(100% + 9rem);
+    transform: translateX(-50%);
+    z-index: -1;
+    pointer-events: none;
+    mask-image: linear-gradient(to bottom, transparent, #000 25%, #000 70%, transparent);
+  }
+</style>
+
+<script>
+  type Pose = { x: number; y: number; t: number };
+  type Keyframe = { n: number; est: Pose; truth: Pose; pts: number[] };
+  type Closure = { a: Keyframe; b: Keyframe; age: number };
+  type Correction = { from: number; to: number; dx: number; dy: number; dt: number; p: number };
+
+  const canvas = document.querySelector<HTMLCanvasElement>('[data-slam]');
+  const ctx = canvas?.getContext('2d');
+
+  if (canvas && ctx) {
+    const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const rays = 56;
+    const range = 170;
+    const speed = 1.5;
+    const pointer = { x: -1e4, y: -1e4 };
+    let width = 0;
+    let height = 0;
+    let color = '';
+    let bg = '';
+    let v = speed;
+    let visible = true;
+    let segs: number[] = [];
+    let s = 0;
+    let truth: Pose = { x: 0, y: 0, t: 0 };
+    let est: Pose = { x: 0, y: 0, t: 0 };
+    let bias = 0;
+    let frame = 0;
+    let count = 0;
+    let lastClosure = 0;
+    let keyframes: Keyframe[] = [];
+    let scan: number[] = [];
+    let closures: Closure[] = [];
+    let correction: Correction | null = null;
+
+    const pathAt = (u: number) => ({
+      x: width / 2 + width * 0.4 * (Math.sin(u) + 0.12 * Math.sin(3 * u + 1.3)),
+      y: height * 0.57 + height * 0.26 * (Math.sin(2 * u) + 0.12 * Math.cos(5 * u)),
+    });
+
+    const gauss = () => Math.random() + Math.random() + Math.random() - 1.5;
+
+    const build = () => {
+      segs = [];
+      const poly = (pts: number[][]) =>
+        pts.forEach((p, i) => segs.push(p[0], p[1], pts[(i + 1) % pts.length][0], pts[(i + 1) % pts.length][1]));
+      poly([
+        [6, 6],
+        [width - 6, 6],
+        [width - 6, height - 6],
+        [6, height - 6],
+      ]);
+      const samples = Array.from({ length: 500 }, (_, i) => pathAt((i / 500) * Math.PI * 2));
+      const placed: { x: number; y: number; r: number }[] = [];
+      for (let k = 0; k < (width * height) / 2500; k++) {
+        const x = Math.random() * width;
+        const y = Math.random() * height;
+        const size = 8 + Math.random() * 28;
+        const rot = Math.random() * Math.PI;
+        const aspect = 0.25 + Math.random() * 0.6;
+        const shape =
+          Math.random() < 0.3
+            ? Array.from({ length: 8 }, (_, i) => [size * Math.cos((i * Math.PI) / 4), size * Math.sin((i * Math.PI) / 4)])
+            : [
+                [-size, -size * aspect],
+                [size, -size * aspect],
+                [size, size * aspect],
+                [-size, size * aspect],
+              ];
+        const r = Math.max(...shape.map(([px, py]) => Math.hypot(px, py)));
+        if (samples.some((p) => Math.hypot(p.x - x, p.y - y) < r + 44)) continue;
+        if (placed.some((q) => Math.hypot(q.x - x, q.y - y) < q.r + r + 8)) continue;
+        placed.push({ x, y, r });
+        poly(shape.map(([px, py]) => [x + px * Math.cos(rot) - py * Math.sin(rot), y + px * Math.sin(rot) + py * Math.cos(rot)]));
+      }
+    };
+
+    const cast = (ox: number, oy: number, dx: number, dy: number) => {
+      let best = range;
+      let hit = 0;
+      for (let i = 0; i < segs.length; i += 4) {
+        const ex = segs[i + 2] - segs[i];
+        const ey = segs[i + 3] - segs[i + 1];
+        const den = dx * ey - dy * ex;
+        if (Math.abs(den) < 1e-9) continue;
+        const fx = segs[i] - ox;
+        const fy = segs[i + 1] - oy;
+        const t = (fx * ey - fy * ex) / den;
+        const u = (fx * dy - fy * dx) / den;
+        if (t > 0 && t < best && u >= 0 && u <= 1) {
+          best = t;
+          hit = 1;
+        }
+      }
+      const fx = ox - pointer.x;
+      const fy = oy - pointer.y;
+      const b = fx * dx + fy * dy;
+      const disc = b * b - (fx * fx + fy * fy - 22 * 22);
+      if (disc > 0) {
+        const t = -b - Math.sqrt(disc);
+        if (t > 0 && t < best) {
+          best = t;
+          hit = 2;
+        }
+      }
+      return [best, hit];
+    };
+
+    const step = () => {
+      frame += 1;
+      const p0 = pathAt(s);
+      const p1 = pathAt(s + 1e-3);
+      const perPx = 1e-3 / Math.hypot(p1.x - p0.x, p1.y - p0.y);
+      let blocked = false;
+      for (let k = 0; k <= 8 && !blocked; k++) {
+        const a = pathAt(s + k * 10 * perPx);
+        blocked = Math.hypot(a.x - pointer.x, a.y - pointer.y) < 44;
+      }
+      v += ((blocked ? 0 : speed) - v) * 0.08;
+      s += v * perPx;
+      const p = pathAt(s);
+      const q = pathAt(s + 1e-3);
+      const heading = Math.atan2(q.y - p.y, q.x - p.x);
+      const dl = Math.hypot(p.x - truth.x, p.y - truth.y);
+      const dth = Math.atan2(Math.sin(heading - truth.t), Math.cos(heading - truth.t));
+      truth = { x: p.x, y: p.y, t: heading };
+      est.t += dth + bias + gauss() * 5e-4;
+      est.x += Math.cos(est.t) * dl * 1.005;
+      est.y += Math.sin(est.t) * dl * 1.005;
+
+      scan = [];
+      for (let i = 0; i < rays; i++) {
+        const a = (i / rays) * Math.PI * 2;
+        const [r, hit] = cast(truth.x, truth.y, Math.cos(truth.t + a), Math.sin(truth.t + a));
+        scan.push(r * Math.cos(a), r * Math.sin(a), hit);
+      }
+
+      if (frame % 6 === 0) {
+        const pts: number[] = [];
+        for (let i = 0; i < scan.length; i += 3) if (scan[i + 2] === 1) pts.push(scan[i], scan[i + 1]);
+        keyframes.push({ n: count++, est: { ...est }, truth: { ...truth }, pts });
+        if (keyframes.length > 460) keyframes.shift();
+
+        const c = keyframes[keyframes.length - 1];
+        if (!correction && c.n - lastClosure > 50) {
+          const o = keyframes.find((k) => c.n - k.n > 90 && Math.hypot(k.truth.x - c.truth.x, k.truth.y - c.truth.y) < 26);
+          if (o) {
+            const dx = c.truth.x - o.truth.x;
+            const dy = c.truth.y - o.truth.y;
+            const rx = Math.cos(o.truth.t) * dx + Math.sin(o.truth.t) * dy;
+            const ry = -Math.sin(o.truth.t) * dx + Math.cos(o.truth.t) * dy;
+            const tx = o.est.x + Math.cos(o.est.t) * rx - Math.sin(o.est.t) * ry;
+            const ty = o.est.y + Math.sin(o.est.t) * rx + Math.cos(o.est.t) * ry;
+            const tt = o.est.t + c.truth.t - o.truth.t;
+            correction = {
+              from: o.n,
+              to: c.n,
+              dx: tx - c.est.x,
+              dy: ty - c.est.y,
+              dt: Math.atan2(Math.sin(tt - c.est.t), Math.cos(tt - c.est.t)),
+              p: 0,
+            };
+            closures.push({ a: o, b: c, age: 0 });
+            lastClosure = c.n;
+          }
+        }
+      }
+
+      if (correction) {
+        const c = correction;
+        const ease = (x: number) => 1 - Math.pow(1 - x, 3);
+        const p = Math.min(1, c.p + 1 / 45);
+        const dp = ease(p) - ease(c.p);
+        c.p = p;
+        for (const k of keyframes) {
+          if (k.n < c.from) continue;
+          const f = k.n >= c.to ? 1 : (k.n - c.from) / (c.to - c.from);
+          k.est.x += c.dx * f * dp;
+          k.est.y += c.dy * f * dp;
+          k.est.t += c.dt * f * dp;
+        }
+        est.x += c.dx * dp;
+        est.y += c.dy * dp;
+        est.t += c.dt * dp;
+        if (p >= 1) {
+          correction = null;
+          bias = (Math.random() < 0.5 ? -1 : 1) * (1 + Math.random()) * 4e-5;
+        }
+      }
+
+      closures.forEach((c) => (c.age += 1));
+      closures = closures.filter((c) => c.age < 110);
+    };
+
+    const draw = () => {
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = color;
+      ctx.strokeStyle = color;
+
+      keyframes.forEach((k, i) => {
+        const cos = Math.cos(k.est.t);
+        const sin = Math.sin(k.est.t);
+        ctx.globalAlpha = 0.5 * Math.min(1, i / 80);
+        ctx.beginPath();
+        for (let j = 0; j < k.pts.length; j += 2) {
+          ctx.rect(k.est.x + cos * k.pts[j] - sin * k.pts[j + 1] - 0.7, k.est.y + sin * k.pts[j] + cos * k.pts[j + 1] - 0.7, 1.4, 1.4);
+        }
+        ctx.fill();
+      });
+
+      ctx.globalAlpha = 0.4;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      keyframes.forEach((k, i) => (i ? ctx.lineTo(k.est.x, k.est.y) : ctx.moveTo(k.est.x, k.est.y)));
+      ctx.stroke();
+      ctx.globalAlpha = 0.6;
+      ctx.beginPath();
+      keyframes.forEach((k) => {
+        if (k.n % 6 === 0) {
+          ctx.moveTo(k.est.x + 1.8, k.est.y);
+          ctx.arc(k.est.x, k.est.y, 1.8, 0, Math.PI * 2);
+        }
+      });
+      ctx.fill();
+
+      const cos = Math.cos(est.t);
+      const sin = Math.sin(est.t);
+      ctx.globalAlpha = 0.09;
+      ctx.beginPath();
+      for (let i = 0; i < scan.length; i += 3) {
+        ctx.moveTo(est.x, est.y);
+        ctx.lineTo(est.x + cos * scan[i] - sin * scan[i + 1], est.y + sin * scan[i] + cos * scan[i + 1]);
+      }
+      ctx.stroke();
+      ctx.globalAlpha = 0.95;
+      ctx.beginPath();
+      for (let i = 0; i < scan.length; i += 3) {
+        if (!scan[i + 2]) continue;
+        const r = scan[i + 2] === 2 ? 1.6 : 1.1;
+        const x = est.x + cos * scan[i] - sin * scan[i + 1];
+        const y = est.y + sin * scan[i] + cos * scan[i + 1];
+        ctx.moveTo(x + r, y);
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+      }
+      ctx.fill();
+
+      for (const c of closures) {
+        const fade = Math.min(1, (110 - c.age) / 40);
+        ctx.globalAlpha = 0.85 * fade;
+        ctx.setLineDash([3, 4]);
+        ctx.beginPath();
+        ctx.moveTo(c.a.est.x, c.a.est.y);
+        ctx.lineTo(c.b.est.x, c.b.est.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        const ring = 4 + Math.min(c.age, 40) * 0.6;
+        ctx.globalAlpha = 0.7 * Math.max(0, 1 - c.age / 40);
+        ctx.beginPath();
+        ctx.arc(c.a.est.x, c.a.est.y, ring, 0, Math.PI * 2);
+        ctx.moveTo(c.b.est.x + ring, c.b.est.y);
+        ctx.arc(c.b.est.x, c.b.est.y, ring, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      const rotors = [1, 3, 5, 7].map((q) => [est.x + Math.cos(est.t + (q * Math.PI) / 4) * 12, est.y + Math.sin(est.t + (q * Math.PI) / 4) * 12]);
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = 2.4;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      rotors.forEach(([x, y]) => {
+        ctx.moveTo(est.x, est.y);
+        ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+      rotors.forEach(([x, y], i) => {
+        ctx.globalAlpha = 0.18;
+        ctx.beginPath();
+        ctx.arc(x, y, 7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 0.9;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        const spin = frame * 0.55 * (i % 2 ? 1 : -1) + i;
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.moveTo(x - Math.cos(spin) * 6, y - Math.sin(spin) * 6);
+        ctx.lineTo(x + Math.cos(spin) * 6, y + Math.sin(spin) * 6);
+        ctx.stroke();
+      });
+      ctx.globalAlpha = 1;
+      ctx.beginPath();
+      ctx.arc(est.x, est.y, 5.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(est.x + cos * 11, est.y + sin * 11);
+      ctx.lineTo(est.x + cos * 5 - sin * 3.5, est.y + sin * 5 + cos * 3.5);
+      ctx.lineTo(est.x + cos * 5 + sin * 3.5, est.y + sin * 5 - cos * 3.5);
+      ctx.closePath();
+      ctx.fill();
+      const sweep = frame * 0.25;
+      ctx.fillStyle = bg;
+      ctx.strokeStyle = bg;
+      ctx.beginPath();
+      ctx.arc(est.x, est.y, 2.6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(est.x, est.y);
+      ctx.lineTo(est.x + Math.cos(sweep) * 4.5, est.y + Math.sin(sweep) * 4.5);
+      ctx.stroke();
+      ctx.lineCap = 'butt';
+    };
+
+    const reset = () => {
+      const dpr = Math.min(devicePixelRatio || 1, 2);
+      width = canvas.clientWidth;
+      height = canvas.clientHeight;
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      color = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+      bg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+      build();
+      s = Math.random() * Math.PI * 2;
+      const p = pathAt(s);
+      const q = pathAt(s + 1e-3);
+      truth = { x: p.x, y: p.y, t: Math.atan2(q.y - p.y, q.x - p.x) };
+      est = { ...truth };
+      bias = 6e-5;
+      v = speed;
+      frame = 0;
+      count = 0;
+      lastClosure = 0;
+      keyframes = [];
+      closures = [];
+      correction = null;
+      for (let i = 0; i < (reduced ? 2400 : 360); i++) step();
+      draw();
+    };
+
+    new ResizeObserver(reset).observe(canvas);
+    new IntersectionObserver(([entry]) => (visible = entry.isIntersecting)).observe(canvas);
+    matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+      color = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+      bg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+      draw();
+    });
+    addEventListener('pointermove', (e) => {
+      const r = canvas.getBoundingClientRect();
+      pointer.x = e.clientX - r.left;
+      pointer.y = e.clientY - r.top;
+    });
+    document.addEventListener('pointerleave', () => {
+      pointer.x = -1e4;
+      pointer.y = -1e4;
+    });
+
+    if (!reduced) {
+      const loop = () => {
+        if (visible && !document.hidden) {
+          step();
+          draw();
+        }
+        requestAnimationFrame(loop);
+      };
+      requestAnimationFrame(loop);
+    }
+  }
+</script>

@@ -1,0 +1,239 @@
+---
+import { getCollection, render } from 'astro:content';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
+import Base from '../../layouts/Base.astro';
+
+export async function getStaticPaths() {
+  const projects = await getCollection('projects', (p) => Boolean(p.body?.trim()));
+  return projects.map((project) => ({ params: { id: project.id }, props: { project } }));
+}
+
+const { project } = Astro.props;
+const { Content, headings } = await render(project);
+const toc = headings.filter((h) => h.depth === 2 || h.depth === 3);
+const escape = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const abstract = (project.data.abstract ?? '')
+  .split(/(\$[^$]+\$)/)
+  .map((part) => (part.startsWith('$') ? katex.renderToString(part.slice(1, -1)) : escape(part)))
+  .join('');
+---
+
+<Base title={project.data.title} description={project.data.summary} wide>
+  <div class="layout">
+    <article>
+      <header class="head">
+        <p class="crumb"><a href="/projects/">Projects</a></p>
+        <h1>{project.data.title}</h1>
+        {project.data.authors && <p class="authors">{project.data.authors}</p>}
+        <p class="meta">{project.data.year}{project.data.venue && ` · ${project.data.venue}`}</p>
+        <p class="actions">
+          {project.data.pdf && <a class="button" href={project.data.pdf}>PDF</a>}
+          {project.data.code && <a class="button" href={project.data.code} rel="noopener">Code</a>}
+          {project.data.link && <a class="button" href={project.data.link} rel="noopener">Paper</a>}
+        </p>
+        {
+          abstract && (
+            <div class="abstract">
+              <p class="label">Abstract</p>
+              <p set:html={abstract} />
+            </div>
+          )
+        }
+      </header>
+      <div class="prose report">
+        <Content />
+      </div>
+    </article>
+
+    {
+      toc.length > 0 && (
+        <aside class="toc">
+          <p>On this page</p>
+          <ol>
+            {toc.map((h) => (
+              <li class={`d${h.depth}`}>
+                <a href={`#${h.slug}`}>{h.text}</a>
+              </li>
+            ))}
+          </ol>
+        </aside>
+      )
+    }
+  </div>
+</Base>
+
+<script>
+  const links = [...document.querySelectorAll<HTMLAnchorElement>('.toc a')];
+  const targets = links.map((a) => document.getElementById(decodeURIComponent(a.hash.slice(1))));
+  const update = () => {
+    let active = -1;
+    targets.forEach((t, i) => {
+      if (t && t.getBoundingClientRect().top < 140) active = i;
+    });
+    links.forEach((a, i) => a.classList.toggle('active', i === active));
+  };
+  addEventListener('scroll', () => requestAnimationFrame(update), { passive: true });
+  update();
+
+  for (const fig of document.querySelectorAll<HTMLElement>('figure.steps')) {
+    const frames = [...fig.querySelectorAll<HTMLElement>(':scope > figure')];
+    if (frames.length < 2) continue;
+    const controls = document.createElement('div');
+    controls.className = 'step-controls';
+    controls.innerHTML =
+      '<button type="button" aria-label="Previous step">‹</button><input type="range" min="0" step="1" aria-label="Step" /><button type="button" aria-label="Next step">›</button><button type="button" class="play">play</button><span></span>';
+    const [prev, range, next, play, label] = controls.children as unknown as [HTMLButtonElement, HTMLInputElement, HTMLButtonElement, HTMLButtonElement, HTMLSpanElement];
+    range.max = String(frames.length - 1);
+    let timer = 0;
+    const show = (i: number) => {
+      const k = (i + frames.length) % frames.length;
+      frames.forEach((f, j) => (f.hidden = !(j === k)));
+      range.value = String(k);
+      label.textContent = `${k + 1} / ${frames.length}`;
+    };
+    const stop = () => {
+      clearInterval(timer);
+      timer = 0;
+      play.textContent = 'play';
+    };
+    prev.addEventListener('click', () => (stop(), show(Number(range.value) - 1)));
+    next.addEventListener('click', () => (stop(), show(Number(range.value) + 1)));
+    range.addEventListener('input', () => (stop(), show(Number(range.value))));
+    play.addEventListener('click', () => {
+      if (timer) return stop();
+      play.textContent = 'pause';
+      timer = window.setInterval(() => show(Number(range.value) + 1), 700);
+    });
+    frames[0].before(controls);
+    fig.classList.add('stepping');
+    show(0);
+  }
+</script>
+
+<style>
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 46rem) 13rem;
+    gap: 3rem;
+    justify-content: center;
+  }
+
+  .crumb {
+    margin: 1.5rem 0 0;
+    font-size: 0.85rem;
+  }
+
+  .crumb a {
+    color: var(--muted);
+  }
+
+  h1 {
+    font-size: clamp(1.8rem, 4.5vw, 2.4rem);
+    margin: 0.4rem 0 0.6rem;
+  }
+
+  .authors {
+    margin: 0;
+    color: var(--fg);
+  }
+
+  .meta {
+    margin: 0.3rem 0 0;
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+
+  .actions {
+    display: flex;
+    gap: 0.6rem;
+    margin: 1.1rem 0 0;
+  }
+
+  .button {
+    padding: 0.35rem 0.9rem;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    color: var(--fg);
+    font-size: 0.88rem;
+  }
+
+  .button:hover {
+    border-color: var(--accent);
+    text-decoration: none;
+  }
+
+  .abstract {
+    margin: 1.75rem 0 0;
+    padding: 1rem 1.2rem;
+    border-left: 3px solid var(--accent);
+    background: var(--surface);
+    border-radius: 0 8px 8px 0;
+  }
+
+  .abstract .label {
+    margin: 0 0 0.3rem;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .abstract p:last-child {
+    margin: 0;
+    font-size: 0.97rem;
+  }
+
+  .toc {
+    position: sticky;
+    top: 1.5rem;
+    align-self: start;
+    max-height: calc(100vh - 3rem);
+    overflow-y: auto;
+    font-size: 0.85rem;
+    padding-top: 2.6rem;
+  }
+
+  .toc p {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .toc ol {
+    list-style: none;
+    padding: 0;
+    margin: 0.6rem 0 0;
+  }
+
+  .toc li {
+    margin: 0.3rem 0;
+  }
+
+  .toc a {
+    color: var(--muted);
+  }
+
+  .toc a.active {
+    color: var(--accent);
+  }
+
+  .toc .d3 {
+    padding-left: 0.9rem;
+  }
+
+  @media (max-width: 1100px) {
+    .layout {
+      grid-template-columns: minmax(0, 46rem);
+    }
+
+    .toc {
+      display: none;
+    }
+  }
+</style>

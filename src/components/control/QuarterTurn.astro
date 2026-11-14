@@ -1,0 +1,180 @@
+---
+import katex from 'katex';
+
+const tex = (s: string) => katex.renderToString(s);
+---
+
+<figure class="viz" data-qturn>
+  <div class="viz-controls">
+    <div class="viz-seg"><button type="button" data-turn aria-pressed="false">multiply by <Fragment set:html={tex('j')} /></button></div>
+    <div class="viz-seg"><button type="button" data-reset aria-pressed="false">reset</button></div>
+  </div>
+  <canvas data-canvas role="img" aria-label="An arrow z in the complex plane and the arrow jz, a quarter-turn ahead" style="cursor: grab; touch-action: none"></canvas>
+  <p class="viz-status" data-status></p>
+</figure>
+
+<script>
+  import { scaleLinear } from 'd3-scale';
+  import { fitCanvas, redrawOn, setStatus, theme } from '../../lib/viz';
+
+  for (const root of document.querySelectorAll<HTMLElement>('[data-qturn]')) {
+    const canvas = root.querySelector<HTMLCanvasElement>('[data-canvas]')!;
+    const status = root.querySelector<HTMLElement>('[data-status]')!;
+    let z = [1.55, 0.85];
+    let presses = 0;
+    let dragging = false;
+
+    const scales = () => {
+      const width = canvas.clientWidth;
+      const height = 300;
+      const unit = Math.min((width - 24) / 5, (height - 24) / 4.4);
+      return {
+        height,
+        sx: scaleLinear().domain([0, 1]).range([width / 2, width / 2 + unit]),
+        sy: scaleLinear().domain([0, 1]).range([height / 2 + unit * 0.1, height / 2 + unit * 0.1 - unit]),
+      };
+    };
+
+    const arrow = (ctx: CanvasRenderingContext2D, x0: number, y0: number, x1: number, y1: number) => {
+      const a = Math.atan2(y1 - y0, x1 - x0);
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(x1, y1);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x1 - 11 * Math.cos(a - 0.38), y1 - 11 * Math.sin(a - 0.38));
+      ctx.lineTo(x1 - 11 * Math.cos(a + 0.38), y1 - 11 * Math.sin(a + 0.38));
+      ctx.fill();
+    };
+
+    const draw = () => {
+      const t = theme();
+      const { height, sx, sy } = scales();
+      const { ctx, width } = fitCanvas(canvas, height);
+      const [u, v] = z;
+      const jz = [-v, u];
+
+      ctx.strokeStyle = t.line;
+      ctx.lineWidth = 1;
+      for (let g = -3; g <= 3; g++) {
+        ctx.beginPath();
+        ctx.moveTo(sx(g), 0);
+        ctx.lineTo(sx(g), height);
+        ctx.moveTo(0, sy(g));
+        ctx.lineTo(width, sy(g));
+        ctx.stroke();
+      }
+      ctx.strokeStyle = t.muted;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(0, sy(0));
+      ctx.lineTo(width, sy(0));
+      ctx.moveTo(sx(0), 0);
+      ctx.lineTo(sx(0), height);
+      ctx.stroke();
+      ctx.fillStyle = t.muted;
+      ctx.font = `11px ${t.mono}`;
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText('real', width - 6, sy(0) - 3);
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText('imaginary', sx(0) + 5, 4);
+
+      ctx.setLineDash([4, 4]);
+      ctx.strokeStyle = t.fg;
+      ctx.globalAlpha = 0.45;
+      ctx.beginPath();
+      ctx.moveTo(sx(u), sy(v));
+      ctx.lineTo(sx(u), sy(0));
+      ctx.moveTo(sx(u), sy(v));
+      ctx.lineTo(sx(0), sy(v));
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = t.fg;
+      ctx.font = '16px KaTeX_Math, serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = v >= 0 ? 'top' : 'bottom';
+      ctx.fillText('u', sx(u), sy(0) + (v >= 0 ? 4 : -4));
+      ctx.textAlign = u >= 0 ? 'right' : 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('v', sx(0) + (u >= 0 ? -6 : 6), sy(v));
+
+      const r = Math.hypot(u, v);
+      if (r > 0.2) {
+        const a0 = Math.atan2(v, u);
+        ctx.strokeStyle = t.muted;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.arc(sx(0), sy(0), (sx(1) - sx(0)) * Math.min(0.5, r * 0.45), -a0, -a0 - Math.PI / 2, true);
+        ctx.stroke();
+      }
+
+      ctx.lineWidth = 2.6;
+      ctx.strokeStyle = t.fg;
+      ctx.fillStyle = t.fg;
+      arrow(ctx, sx(0), sy(0), sx(u), sy(v));
+      ctx.strokeStyle = t.accent;
+      ctx.fillStyle = t.accent;
+      arrow(ctx, sx(0), sy(0), sx(jz[0]), sy(jz[1]));
+
+      ctx.font = '17px KaTeX_Math, serif';
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'center';
+      const label = (p: number[], text: string, color: string) => {
+        const n = Math.hypot(p[0], p[1]) || 1;
+        ctx.fillStyle = color;
+        ctx.fillText(text, sx(p[0]) + (p[0] / n) * 16, sy(p[1]) - (p[1] / n) * 16);
+      };
+      label(z, 'z', t.fg);
+      label(jz, 'jz', t.accent);
+      ctx.fillStyle = t.fg;
+      ctx.beginPath();
+      ctx.arc(sx(u), sy(v), 5, 0, Math.PI * 2);
+      ctx.fill();
+
+      const fmt = (a: number, b: number) => `${a.toFixed(2)} ${b < 0 ? '-' : '+'} ${Math.abs(b).toFixed(2)}j`;
+      const turns = presses % 4;
+      const note = presses ? `  Pressed ${presses}×: $z$ has been multiplied by $${['j^4 = 1', 'j', 'j^2 = -1', 'j^3 = -j'][turns]}$.` : '';
+      setStatus(status, `$z = ${fmt(u, v)}$   $jz = ${fmt(jz[0], jz[1])}$   $|z| = |jz| = ${r.toFixed(2)}$${note}`);
+    };
+
+    const setFromPointer = (e: PointerEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      const { sx, sy } = scales();
+      z = [Math.max(-2.4, Math.min(2.4, sx.invert(e.clientX - rect.left))), Math.max(-2, Math.min(2, sy.invert(e.clientY - rect.top)))];
+      presses = 0;
+      draw();
+    };
+
+    canvas.addEventListener('pointerdown', (e) => {
+      dragging = true;
+      canvas.setPointerCapture(e.pointerId);
+      setFromPointer(e);
+    });
+    canvas.addEventListener('pointermove', (e) => dragging && setFromPointer(e));
+    canvas.addEventListener('pointerup', () => (dragging = false));
+
+    root.querySelector('[data-turn]')!.addEventListener('click', () => {
+      const from = [...z];
+      const start = performance.now();
+      presses += 1;
+      const step = (stamp: number) => {
+        const p = Math.min(1, (stamp - start) / 450);
+        const a = (Math.PI / 2) * (1 - Math.pow(1 - p, 3));
+        z = [from[0] * Math.cos(a) - from[1] * Math.sin(a), from[0] * Math.sin(a) + from[1] * Math.cos(a)];
+        draw();
+        if (p < 1) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    });
+    root.querySelector('[data-reset]')!.addEventListener('click', () => {
+      z = [1.55, 0.85];
+      presses = 0;
+      draw();
+    });
+    redrawOn(canvas, draw);
+  }
+</script>

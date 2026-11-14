@@ -1,0 +1,109 @@
+---
+import katex from 'katex';
+
+const tex = (s: string) => katex.renderToString(s);
+---
+
+<figure class="viz mixer" aria-label="A mixer turns collective and differential commands into rotor commands">
+  <div class="col">
+    <div class="chip"><span set:html={tex('u_c')} /> collective</div>
+    <div class="chip roll"><span set:html={tex('u_d')} /> differential</div>
+  </div>
+  <div class="arrow" aria-hidden="true"></div>
+  <div class="box">
+    <div class="label">mixer</div>
+    <div set:html={tex(String.raw`\begin{aligned}u_L&=u_c-u_d\\u_R&=u_c+u_d\end{aligned}`)} />
+  </div>
+  <div class="arrow" aria-hidden="true"></div>
+  <div class="col">
+    <div class="chip">left rotor <span set:html={tex('u_L')} /></div>
+    <div class="chip">right rotor <span set:html={tex('u_R')} /></div>
+  </div>
+</figure>
+
+<style>
+  .mixer {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.9rem;
+    flex-wrap: wrap;
+    font-size: 0.9rem;
+  }
+
+  .col {
+    display: grid;
+    gap: 0.6rem;
+  }
+
+  .chip {
+    padding: 0.45rem 0.8rem;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    color: var(--muted);
+    background: var(--bg);
+    white-space: nowrap;
+  }
+
+  .chip :global(.katex) {
+    color: var(--fg);
+  }
+
+  .chip.roll {
+    border-color: color-mix(in srgb, var(--accent) 60%, var(--line));
+  }
+
+  .box {
+    padding: 0.6rem 1rem;
+    border: 1.5px solid var(--fg);
+    border-radius: 10px;
+    text-align: center;
+    background: var(--bg);
+  }
+
+  .label {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 0.2rem;
+  }
+
+  .arrow {
+    width: 2.2rem;
+    height: 2px;
+    background: var(--muted);
+    position: relative;
+  }
+
+  .arrow::after {
+    content: '';
+    position: absolute;
+    right: -1px;
+    top: -4px;
+    border: 5px solid transparent;
+    border-left: 7px solid var(--muted);
+    border-right: 0;
+  }
+
+  @media (max-width: 560px) {
+    .mixer {
+      flex-direction: column;
+    }
+
+    .arrow {
+      width: 2px;
+      height: 1.4rem;
+    }
+
+    .arrow::after {
+      right: -4px;
+      top: auto;
+      bottom: -1px;
+      border: 5px solid transparent;
+      border-top: 7px solid var(--muted);
+      border-bottom: 0;
+    }
+  }
+</style>

@@ -1,0 +1,273 @@
+# Places for the travel map that do not have a post.
+# Each key is the place's id; put its photos (optional) in src/content/places/<id>/.
+# coords is [latitude, longitude]; year and country are optional.
+
+reno:
+  place: Reno
+  coords: [39.5296, -119.8138]
+  country: United States of America
+
+los-angeles:
+  place: Los Angeles
+  coords: [34.0522, -118.2437]
+  country: United States of America
+
+mexico-city:
+  place: Mexico City
+  coords: [19.4326, -99.1332]
+  country: Mexico
+
+toronto:
+  place: Toronto
+  coords: [43.6532, -79.3832]
+  country: Canada
+
+new-york:
+  place: New York
+  coords: [40.7128, -74.0060]
+  country: United States of America
+
+miami:
+  place: Miami
+  coords: [25.7617, -80.1918]
+  country: United States of America
+
+dallas:
+  place: Dallas
+  coords: [32.7767, -96.7970]
+  country: United States of America
+
+washington-dc:
+  place: Washington, D.C.
+  coords: [38.9072, -77.0369]
+  country: United States of America
+
+virginia-beach:
+  place: Virginia Beach
+  coords: [36.8529, -75.9780]
+  country: United States of America
+
+pittsburgh:
+  place: Pittsburgh
+  coords: [40.4433, -79.9436]
+  country: United States of America
+
+philadelphia:
+  place: Philadelphia
+  coords: [39.9526, -75.1652]
+  country: United States of America
+
+montreal:
+  place: Montréal
+  coords: [45.5019, -73.5674]
+  country: Canada
+
+tel-aviv:
+  place: Tel Aviv
+  coords: [32.0853, 34.7818]
+  country: Israel
+
+abu-dhabi:
+  place: Abu Dhabi
+  coords: [24.4539, 54.3773]
+  country: United Arab Emirates
+
+tokyo:
+  place: Tokyo
+  coords: [35.6762, 139.6503]
+  country: Japan
+
+sapporo:
+  place: Sapporo
+  coords: [43.0618, 141.3545]
+  country: Japan
+
+hiroshima:
+  place: Hiroshima
+  coords: [34.3853, 132.4553]
+  country: Japan
+
+madrid:
+  place: Madrid
+  coords: [40.4168, -3.7038]
+  country: Spain
+
+barcelona:
+  place: Barcelona
+  coords: [41.3874, 2.1686]
+  country: Spain
+
+lisbon:
+  place: Lisbon
+  coords: [38.7223, -9.1393]
+  country: Portugal
+
+rome:
+  place: Rome
+  coords: [41.9028, 12.4964]
+  country: Italy
+
+milan:
+  place: Milan
+  coords: [45.4642, 9.1900]
+  country: Italy
+
+paris:
+  place: Paris
+  coords: [48.8566, 2.3522]
+  country: France
+
+amsterdam:
+  place: Amsterdam
+  coords: [52.3676, 4.9041]
+  country: Netherlands
+
+london:
+  place: London
+  coords: [51.5074, -0.1278]
+  country: United Kingdom
+
+munich:
+  place: Munich
+  coords: [48.1351, 11.5820]
+  country: Germany
+
+zurich:
+  place: Zürich
+  coords: [47.3769, 8.5417]
+  country: Switzerland
+
+kyiv:
+  place: Kyiv
+  coords: [50.4501, 30.5234]
+  country: Ukraine
+
+moscow:
+  place: Moscow
+  coords: [55.7558, 37.6173]
+  country: Russia
+
+st-petersburg:
+  place: St. Petersburg
+  coords: [59.9311, 30.3609]
+  country: Russia
+
+warsaw:
+  place: Warsaw
+  coords: [52.2297, 21.0122]
+  country: Poland
+
+krakow:
+  place: Kraków
+  coords: [50.0647, 19.9450]
+  country: Poland
+
+riga:
+  place: Riga
+  coords: [56.9496, 24.1052]
+  country: Latvia
+
+tallinn:
+  place: Tallinn
+  coords: [59.4370, 24.7536]
+  country: Estonia
+
+vilnius:
+  place: Vilnius
+  coords: [54.6872, 25.2797]
+  country: Lithuania
+
+helsinki:
+  place: Helsinki
+  coords: [60.1699, 24.9384]
+  country: Finland
+
+prague:
+  place: Prague
+  coords: [50.0755, 14.4378]
+  country: Czechia
+
+budapest:
+  place: Budapest
+  coords: [47.4979, 19.0402]
+  country: Hungary
+
+split:
+  place: Split
+  coords: [43.5081, 16.4402]
+  country: Croatia
+
+innsbruck:
+  place: Innsbruck
+  coords: [47.2692, 11.4041]
+  country: Austria
+
+salzburg:
+  place: Salzburg
+  coords: [47.8095, 13.0550]
+  country: Austria
+
+minsk:
+  place: Minsk
+  coords: [53.9006, 27.5590]
+  country: Belarus
+
+san-francisco:
+  place: San Francisco
+  coords: [37.7749, -122.4194]
+  country: United States of America
+
+turks-and-caicos:
+  place: Turks and Caicos
+  coords: [21.6940, -71.7979]
+  country: Turks and Caicos Islands
+
+aruba:
+  place: Aruba
+  coords: [12.5211, -69.9683]
+  country: Aruba
+
+azores:
+  place: Azores
+  coords: [37.7412, -25.6756]
+  country: Portugal
+
+denver:
+  place: Denver
+  coords: [39.7392, -104.9903]
+  country: United States of America
+
+colorado-springs:
+  place: Colorado Springs
+  coords: [38.8339, -104.8214]
+  country: United States of America
+
+dublin:
+  place: Dublin
+  coords: [53.3498, -6.2603]
+  country: Ireland
+
+taba:
+  place: Taba
+  coords: [29.4925, 34.8969]
+  country: Egypt
+
+amman:
+  place: Amman
+  coords: [31.9539, 35.9106]
+  country: Jordan
+
+antwerp:
+  place: Antwerp
+  coords: [51.2194, 4.4025]
+  country: Belgium
+
+bratislava:
+  place: Bratislava
+  coords: [48.1486, 17.1077]
+  country: Slovakia
+
+ljubljana:
+  place: Ljubljana
+  coords: [46.0569, 14.5058]
+  country: Slovenia

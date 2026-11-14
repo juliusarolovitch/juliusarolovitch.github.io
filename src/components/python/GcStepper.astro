@@ -1,0 +1,229 @@
+---
+const nodes = [
+  { id: 'A', x: 230, y: 70, rc: 2, sub: 1, alive: true },
+  { id: 'B', x: 400, y: 70, rc: 1, sub: 0, alive: true },
+  { id: 'E', x: 230, y: 230, rc: 1, sub: 1, alive: true },
+  { id: 'F', x: 400, y: 230, rc: 1, sub: 0, alive: true },
+  { id: 'C', x: 560, y: 70, rc: 1, sub: 0, alive: false },
+  { id: 'D', x: 560, y: 230, rc: 1, sub: 0, alive: false },
+];
+const at = Object.fromEntries(nodes.map((n) => [n.id, n]));
+const edges: [string, string, number, boolean][] = [
+  ['A', 'B', -14, true],
+  ['B', 'A', -14, true],
+  ['E', 'F', 0, true],
+  ['C', 'D', -16, true],
+  ['D', 'C', -16, true],
+];
+const curve = (a: string, b: string, bend: number) => {
+  const p = at[a];
+  const q = at[b];
+  const mx = (p.x + q.x) / 2;
+  const my = (p.y + q.y) / 2;
+  const dx = q.x - p.x;
+  const dy = q.y - p.y;
+  const len = Math.hypot(dx, dy);
+  const nx = -dy / len;
+  const ny = dx / len;
+  const r = 30;
+  const sx = p.x + (dx / len) * r + nx * (bend * 0.6);
+  const sy = p.y + (dy / len) * r + ny * (bend * 0.6);
+  const ex = q.x - (dx / len) * (r + 6) + nx * (bend * 0.6);
+  const ey = q.y - (dy / len) * (r + 6) + ny * (bend * 0.6);
+  return `M${sx.toFixed(1)},${sy.toFixed(1)} Q${(mx + nx * bend * 2).toFixed(1)},${(my + ny * bend * 2).toFixed(1)} ${ex.toFixed(1)},${ey.toFixed(1)}`;
+};
+---
+
+<figure class="viz gcstep" data-gcstep>
+  <div class="viz-controls">
+    <div class="viz-seg"><button type="button" data-prev aria-pressed="false">‹ back</button></div>
+    <div class="viz-seg"><button type="button" data-next aria-pressed="false">next ›</button></div>
+    <ol class="steps-dots" aria-label="Step">
+      {['start', 'copy', 'subtract', 'mark', 'free'].map((s, i) => <li data-dot={i}>{s}</li>)}
+    </ol>
+  </div>
+  <svg viewBox="0 0 640 320" role="img" aria-label="Six objects in a collection group, with reference counts">
+    <defs>
+      <marker id="gc-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0 0L10 5L0 10z" class="head"></path>
+      </marker>
+    </defs>
+    <rect class="group" x="160" y="20" width="460" height="290" rx="16"></rect>
+    <text class="group-label" x="604" y="300" text-anchor="end">the group being collected</text>
+    <rect class="outside" x="20" y="125" width="96" height="50" rx="25"></rect>
+    <text class="outside-label" x="68" y="155" text-anchor="middle">outside</text>
+    <path class="edge out-edge" d="M116,140 Q170,95 197,80" marker-end="url(#gc-arrow)"></path>
+    <path class="edge out-edge" d="M116,160 Q170,205 197,220" marker-end="url(#gc-arrow)"></path>
+    {edges.map(([a, b, bend]) => <path class="edge" data-edge={`${a}${b}`} d={curve(a, b, bend)} marker-end="url(#gc-arrow)" />)}
+    {
+      nodes.map((n) => (
+        <g class="node" data-node={n.id} data-rc={n.rc} data-sub={n.sub} data-alive={String(n.alive)}>
+          <circle cx={n.x} cy={n.y} r="30" />
+          <text class="name" x={n.x} y={n.y + 6} text-anchor="middle">
+            {n.id}
+          </text>
+          <text class="count" x={n.x} y={n.id === 'C' ? n.y - 40 : n.y + 52} text-anchor="middle" />
+        </g>
+      ))
+    }
+  </svg>
+  <p class="viz-status" data-status></p>
+</figure>
+
+<style>
+  svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    font-family: var(--mono);
+  }
+
+  .group {
+    fill: color-mix(in srgb, var(--accent) 5%, transparent);
+    stroke: var(--line);
+    stroke-dasharray: 6 5;
+  }
+
+  .group-label {
+    font-size: 12px;
+    fill: var(--muted);
+  }
+
+  .outside {
+    fill: var(--surface);
+    stroke: var(--muted);
+    stroke-width: 1.5;
+  }
+
+  .outside-label {
+    font-size: 14px;
+    fill: var(--fg);
+  }
+
+  .edge {
+    fill: none;
+    stroke: var(--muted);
+    stroke-width: 2;
+    transition: opacity 0.3s ease, stroke 0.3s ease;
+  }
+
+  .head {
+    fill: var(--muted);
+  }
+
+  .node circle {
+    fill: var(--surface);
+    stroke: var(--fg);
+    stroke-width: 2;
+    transition: fill 0.3s ease, stroke 0.3s ease, opacity 0.3s ease;
+  }
+
+  .node .name {
+    font-size: 20px;
+    font-weight: 700;
+    fill: var(--fg);
+  }
+
+  .node .count {
+    font-size: 13px;
+    fill: var(--muted);
+  }
+
+  .gcstep[data-step='2'] .edge:not(.out-edge) {
+    stroke: var(--accent);
+    stroke-dasharray: 5 4;
+  }
+
+  .gcstep[data-step='3'] .node[data-alive='true'] circle,
+  .gcstep[data-step='4'] .node[data-alive='true'] circle {
+    fill: color-mix(in srgb, var(--accent) 25%, var(--surface));
+    stroke: var(--accent);
+  }
+
+  .gcstep[data-step='4'] .node[data-alive='false'] circle {
+    stroke-dasharray: 5 4;
+    stroke: #e05a47;
+    opacity: 0.55;
+  }
+
+  .gcstep[data-step='4'] .node[data-alive='false'] .name {
+    fill: #e05a47;
+  }
+
+  .gcstep[data-step='4'] [data-edge='CD'],
+  .gcstep[data-step='4'] [data-edge='DC'] {
+    opacity: 0.25;
+  }
+
+  .steps-dots {
+    display: flex;
+    gap: 0.4rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+
+  .steps-dots li {
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+  }
+
+  .steps-dots li.on {
+    color: var(--fg);
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+  }
+</style>
+
+<script>
+  import { setStatus } from '../../lib/viz';
+
+  const texts = [
+    'Each object starts with its reference count. $A$ is referenced from outside and by $B$, so $\\texttt{refcount}(A) = 2$.',
+    'Step 1, copy: every object gets a scratch counter $\\texttt{gc\\_refs}$, set to its reference count.',
+    'Step 2, subtract: for every reference that starts inside the group (dashed), subtract one from its target. What is left counts references from outside.',
+    'Step 3, mark: $A$ and $E$ still have $\\texttt{gc\\_refs} > 0$, so they are alive - and so is everything they reach, $B$ and $F$.',
+    'Step 4, free: $C$ and $D$ are referenced only by each other. The collector breaks their loop and reference counting frees them.',
+  ];
+
+  for (const root of document.querySelectorAll<HTMLElement>('[data-gcstep]')) {
+    const status = root.querySelector<HTMLElement>('[data-status]')!;
+    const nodes = [...root.querySelectorAll<SVGGElement>('[data-node]')];
+    const dots = [...root.querySelectorAll<HTMLElement>('[data-dot]')];
+    let step = 0;
+
+    const render = () => {
+      root.dataset.step = String(step);
+      for (const n of nodes) {
+        const rc = Number(n.dataset.rc);
+        const sub = Number(n.dataset.sub);
+        const alive = n.dataset.alive === 'true';
+        const label = n.querySelector('.count')!;
+        label.textContent =
+          step === 0 ? `rc ${rc}` : step === 1 ? `gc_refs ${rc}` : step === 2 ? `gc_refs ${sub}` : alive ? 'alive' : step === 3 ? 'unreached' : 'freed';
+      }
+      dots.forEach((d, i) => d.classList.toggle('on', i === step));
+      setStatus(status, texts[step]);
+    };
+
+    root.querySelector('[data-next]')!.addEventListener('click', () => {
+      step = Math.min(4, step + 1);
+      render();
+    });
+    root.querySelector('[data-prev]')!.addEventListener('click', () => {
+      step = Math.max(0, step - 1);
+      render();
+    });
+    dots.forEach((d, i) =>
+      d.addEventListener('click', () => {
+        step = i;
+        render();
+      }),
+    );
+    render();
+  }
+</script>

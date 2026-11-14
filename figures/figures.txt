@@ -1,0 +1,13 @@
+notes/gc-trigger.tex public/notes/python-internals/gc-trigger.svg
+notes/gc-freeze.tex public/notes/python-internals/gc-freeze.svg
+notes/mass-spring.tex public/notes/control/mass-spring.svg
+projects/ctc-beam-search.tex public/projects/ctc-beam-search.svg
+projects/ctc-diagram.tex public/projects/ctc-beam-search/ctc-diagram.svg
+projects/celestial-diagram.tex public/projects/celestial-positioning/celestial-diagram.svg
+projects/posegraph-diagram.tex public/projects/active-slam/posegraph-diagram.svg
+projects/alg_ctc_beam_search.tex public/projects/ctc-beam-search/alg_ctc_beam_search.svg
+projects/fig_gpu_pipeline.tex public/projects/ctc-beam-search/fig_gpu_pipeline.svg
+projects/fig_memory_layout.tex public/projects/ctc-beam-search/fig_memory_layout.svg
+projects/fig_packed_key.tex public/projects/ctc-beam-search/fig_packed_key.svg
+projects/fig_testing_pipeline.tex public/projects/ctc-beam-search/fig_testing_pipeline.svg
+projects/fig_warp_mapping_final.tex public/projects/ctc-beam-search/fig_warp_mapping_final.svg

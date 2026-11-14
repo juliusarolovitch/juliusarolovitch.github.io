@@ -1,0 +1,205 @@
+---
+import { getCollection, render } from 'astro:content';
+import 'katex/dist/katex.min.css';
+import Base from '../../layouts/Base.astro';
+import { byOrder, topicLabel, topicOf } from '../../lib/notes';
+
+export async function getStaticPaths() {
+  const notes = await getCollection('notes', (n) => !n.data.draft);
+  return notes.map((note) => ({ params: { id: note.id }, props: { note, notes } }));
+}
+
+const { note, notes } = Astro.props;
+const { Content, headings } = await render(note);
+const topic = topicOf(note);
+const siblings = notes.filter((n) => topicOf(n) === topic).sort(byOrder);
+const index = siblings.findIndex((n) => n.id === note.id);
+const prev = siblings[index - 1];
+const next = siblings[index + 1];
+const toc = headings.filter((h) => h.depth === 2 || h.depth === 3);
+---
+
+<Base title={note.data.title} description={note.data.description} wide>
+  <div class="layout">
+    <aside class="side">
+      <a class="topic" href={`/notes/#${topic}`}>{topicLabel(topic)}</a>
+      <ol>
+        {
+          siblings.map((n) => (
+            <li>
+              <a href={`/notes/${n.id}/`} aria-current={n.id === note.id ? 'page' : undefined}>
+                {n.data.title}
+              </a>
+            </li>
+          ))
+        }
+      </ol>
+    </aside>
+
+    <article>
+      <header>
+        <p class="crumb"><a href="/notes/">Notes</a> / <a href={`/notes/#${topic}`}>{topicLabel(topic)}</a></p>
+        <h1>{note.data.title}</h1>
+        {note.data.description && <p class="lede">{note.data.description}</p>}
+        {
+          note.data.updated && (
+            <p class="meta">
+              Updated{' '}
+              <time datetime={note.data.updated.toISOString()}>
+                {note.data.updated.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}
+              </time>
+            </p>
+          )
+        }
+      </header>
+      <div class="prose">
+        <Content />
+      </div>
+      <nav class="pager">
+        {prev ? <a href={`/notes/${prev.id}/`}>← {prev.data.title}</a> : <span />}
+        {next && <a class="next" href={`/notes/${next.id}/`}>{next.data.title} →</a>}
+      </nav>
+    </article>
+
+    {
+      toc.length > 0 && (
+        <aside class="toc">
+          <p>On this page</p>
+          <ol>
+            {toc.map((h) => (
+              <li class={`d${h.depth}`}>
+                <a href={`#${h.slug}`}>{h.text}</a>
+              </li>
+            ))}
+          </ol>
+        </aside>
+      )
+    }
+  </div>
+</Base>
+
+<script>
+  const links = [...document.querySelectorAll<HTMLAnchorElement>('.toc a')];
+  const targets = links.map((a) => document.getElementById(decodeURIComponent(a.hash.slice(1))));
+  const update = () => {
+    let active = -1;
+    targets.forEach((t, i) => {
+      if (t && t.getBoundingClientRect().top < 140) active = i;
+    });
+    links.forEach((a, i) => a.classList.toggle('active', i === active));
+  };
+  addEventListener('scroll', () => requestAnimationFrame(update), { passive: true });
+  update();
+</script>
+
+<style>
+  .layout {
+    display: grid;
+    grid-template-columns: 13rem minmax(0, 44rem) 12rem;
+    gap: 3rem;
+    justify-content: center;
+  }
+
+  .side,
+  .toc {
+    position: sticky;
+    top: 1.5rem;
+    align-self: start;
+    max-height: calc(100vh - 3rem);
+    overflow-y: auto;
+    font-size: 0.88rem;
+    padding-top: 2.4rem;
+  }
+
+  .side ol,
+  .toc ol {
+    list-style: none;
+    padding: 0;
+    margin: 0.6rem 0 0;
+  }
+
+  .side li,
+  .toc li {
+    margin: 0.35rem 0;
+  }
+
+  .side a,
+  .toc a {
+    color: var(--muted);
+  }
+
+  .side .topic {
+    color: var(--fg);
+    font-weight: 600;
+  }
+
+  .side a[aria-current='page'],
+  .toc a.active {
+    color: var(--accent);
+  }
+
+  .toc p {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .toc .d3 {
+    padding-left: 0.9rem;
+  }
+
+  .crumb {
+    margin: 1.5rem 0 0;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+
+  .crumb a {
+    color: var(--muted);
+  }
+
+  h1 {
+    font-size: clamp(1.9rem, 5vw, 2.5rem);
+    margin: 0.4rem 0 0.5rem;
+  }
+
+  .lede {
+    font-size: 1.12rem;
+    color: var(--muted);
+    margin: 0;
+  }
+
+  .meta {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--muted);
+    margin: 0.75rem 0 0;
+  }
+
+  .pager {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-top: 3.5rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--line);
+  }
+
+  .pager .next {
+    text-align: right;
+  }
+
+  @media (max-width: 1180px) {
+    .layout {
+      grid-template-columns: minmax(0, 44rem);
+    }
+
+    .side,
+    .toc {
+      display: none;
+    }
+  }
+</style>

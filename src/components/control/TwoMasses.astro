@@ -1,0 +1,130 @@
+---
+import katex from 'katex';
+
+const tex = (s: string) => katex.renderToString(s);
+---
+
+<figure class="viz" data-masses>
+  <div class="viz-controls">
+    <div class="viz-seg" role="group" aria-label="Proposed state">
+      <button type="button" data-state="q" aria-pressed="true">state <Fragment set:html={tex(String.raw`\mathbf{x}=[q]`)} /></button>
+      <button type="button" data-state="qv" aria-pressed="false">state <Fragment set:html={tex(String.raw`\mathbf{x}=[q,\ v]`)} /></button>
+    </div>
+    <div class="viz-seg"><button type="button" data-play aria-pressed="false">play</button></div>
+  </div>
+  <canvas data-canvas role="img" aria-label="Two frictionless masses that start at the same position with opposite velocities"></canvas>
+  <p class="viz-status" data-status></p>
+</figure>
+
+<script>
+  import { scaleLinear } from 'd3-scale';
+  import { fitCanvas, panel, redrawOn, setStatus, theme } from '../../lib/viz';
+
+  const duration = 2;
+  const masses = [
+    { name: 'A', v: 1 },
+    { name: 'B', v: -1 },
+  ];
+
+  for (const root of document.querySelectorAll<HTMLElement>('[data-masses]')) {
+    const canvas = root.querySelector<HTMLCanvasElement>('[data-canvas]')!;
+    const status = root.querySelector<HTMLElement>('[data-status]')!;
+    let mode = 'q';
+    let t = 0;
+    let start = 0;
+
+    const draw = () => {
+      const c = theme();
+      const { ctx, width } = fitCanvas(canvas, 300);
+      const qx = scaleLinear().domain([-2.4, 2.4]).range([56, width - 16]);
+      ctx.font = `12px ${c.mono}`;
+      ctx.textBaseline = 'middle';
+
+      masses.forEach((m, i) => {
+        const y = 34 + i * 62;
+        const q = m.v * t;
+        ctx.strokeStyle = c.line;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(qx(-2.4), y + 16);
+        ctx.lineTo(qx(2.4), y + 16);
+        ctx.stroke();
+        ctx.fillStyle = c.muted;
+        ctx.textAlign = 'left';
+        ctx.fillText(m.name, 16, y);
+        ctx.fillStyle = c.surface;
+        ctx.strokeStyle = c.fg;
+        ctx.lineWidth = 1.6;
+        ctx.fillRect(qx(q) - 18, y - 14, 36, 30);
+        ctx.strokeRect(qx(q) - 18, y - 14, 36, 30);
+        if (mode === 'qv') {
+          const x0 = qx(q);
+          const x1 = x0 + m.v * 46;
+          ctx.strokeStyle = c.accent;
+          ctx.fillStyle = c.accent;
+          ctx.lineWidth = 2.2;
+          ctx.beginPath();
+          ctx.moveTo(x0, y - 22);
+          ctx.lineTo(x1, y - 22);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(x1 + m.v * 6, y - 22);
+          ctx.lineTo(x1, y - 26);
+          ctx.lineTo(x1, y - 18);
+          ctx.fill();
+        }
+      });
+
+      const box = { x: 56, y: 152, w: width - 72, h: 118 };
+      const { x, y } = panel(ctx, box, [0, duration], [-2.4, 2.4], 'position over time');
+      const steps = Math.round((t / duration) * 100);
+      masses.forEach((m) => {
+        ctx.strokeStyle = c.accent;
+        ctx.globalAlpha = m.v > 0 ? 1 : 0.55;
+        ctx.lineWidth = 2.4;
+        ctx.beginPath();
+        for (let k = 0; k <= steps; k++) {
+          const tk = (k / 100) * duration;
+          if (k) ctx.lineTo(x(tk), y(m.v * tk));
+          else ctx.moveTo(x(tk), y(m.v * tk));
+        }
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        if (t > 0.15) {
+          ctx.fillStyle = c.fg;
+          ctx.textAlign = 'left';
+          ctx.fillText(m.name, x(t) + 6, y(m.v * t));
+        }
+      });
+      ctx.fillStyle = c.muted;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      for (const s of [0, 0.5, 1, 1.5, 2]) ctx.fillText(`${s} s`, x(s), box.y + box.h + 6);
+
+      const fmt = (v: number) => v.toFixed(2);
+      const state = (m: { v: number }) => (mode === 'q' ? `[${fmt(m.v * t)}]` : `[${fmt(m.v * t)}, ${fmt(m.v)}]`);
+      const note = t > 0 ? '' : mode === 'q' ? '  The same state, but press play.' : '  Different states, so different futures are no surprise.';
+      setStatus(status, `$t = ${t.toFixed(2)}\\,\\text{s}$   $\\mathbf{x}_A = ${state(masses[0])}$   $\\mathbf{x}_B = ${state(masses[1])}$${note}`);
+    };
+
+    const loop = (now: number) => {
+      t = Math.min(duration, (now - start) / 1000);
+      draw();
+      if (t < duration) requestAnimationFrame(loop);
+    };
+
+    root.querySelector('[data-play]')!.addEventListener('click', () => {
+      start = performance.now();
+      requestAnimationFrame(loop);
+    });
+    for (const b of root.querySelectorAll<HTMLButtonElement>('[data-state]')) {
+      b.addEventListener('click', () => {
+        mode = b.dataset.state!;
+        t = 0;
+        root.querySelectorAll('[data-state]').forEach((o) => o.setAttribute('aria-pressed', String(o === b)));
+        draw();
+      });
+    }
+    redrawOn(canvas, draw);
+  }
+</script>

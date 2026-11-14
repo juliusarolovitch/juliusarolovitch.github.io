@@ -1,0 +1,234 @@
+<figure class="viz filter-design" data-filter-design>
+  <div class="viz-controls">
+    <label>Cutoff <input type="range" min="1.30103" max="4.30103" step="0.005" value="2.74036" data-cutoff aria-label="Low-pass cutoff frequency" /><output data-cutoff-out>550 Hz</output></label>
+    <div class="viz-seg" role="group" aria-label="Cutoff presets">
+      <button type="button" data-preset="20000">Pass both</button>
+      <button type="button" data-preset="550">Reduce high tone</button>
+      <button type="button" data-preset="20">Attenuate both</button>
+    </div>
+  </div>
+  <p class="response-title">Time-domain response</p>
+  <canvas data-wave role="img" aria-label="Input and filtered output waveforms over 20 milliseconds"></canvas>
+  <p class="legend"><span>Input: 220 Hz + 2,200 Hz</span><span>Filtered output</span></p>
+  <p class="response-title">Frequency magnitude response</p>
+  <canvas data-response role="img" aria-label="First-order low-pass magnitude response in decibels versus frequency"></canvas>
+  <div class="tone-levels">
+    <div><strong>220 Hz · signal</strong><meter min="0" max="1" value="0.93" data-low-meter aria-label="220 Hz amplitude remaining"></meter><output data-low></output></div>
+    <div><strong>2,200 Hz · interference</strong><meter min="0" max="1" value="0.24" data-high-meter aria-label="2200 Hz amplitude remaining"></meter><output data-high></output></div>
+  </div>
+  <div class="viz-controls audio-controls">
+    <button type="button" data-play aria-pressed="false">Play audio</button>
+    <div class="viz-seg" role="group" aria-label="Listen to">
+      <button type="button" data-listen="input" aria-pressed="false">Input</button>
+      <button type="button" data-listen="output" aria-pressed="true">Filtered output</button>
+    </div>
+    <label>Volume <input type="range" min="0" max="0.3" step="0.01" value="0.08" data-volume aria-label="Audio volume" /></label>
+  </div>
+  <p class="viz-status" data-audio-status role="status">Press play to listen, then move the cutoff or switch between input and output.</p>
+</figure>
+
+<style>
+  .filter-design { overflow: hidden; }
+  .legend { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; font-size: 0.85rem; }
+  .legend span:first-child { color: var(--muted); }
+  .legend span:last-child { color: var(--accent); }
+  .response-title { margin: 1.25rem 0 0.25rem; font-size: 0.9rem; }
+  .tone-levels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin: 1rem 0; }
+  .tone-levels > div { display: grid; gap: 0.35rem; min-width: 0; }
+  .tone-levels strong { font-size: 0.85rem; font-weight: 500; }
+  meter { width: 100%; accent-color: var(--accent); }
+  .tone-levels output { font-family: var(--mono); font-size: 0.78rem; }
+  [data-cutoff-out] { min-width: 5rem; }
+  .audio-controls > button { border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--fg); padding: 0.45rem 0.8rem; font: inherit; cursor: pointer; }
+  @media (max-width: 480px) { .tone-levels { grid-template-columns: 1fr; } }
+</style>
+
+<script>
+  import { fitCanvas, panel, redrawOn, theme } from '../../lib/viz';
+
+  for (const root of document.querySelectorAll<HTMLElement>('[data-filter-design]')) {
+    const cutoff = root.querySelector<HTMLInputElement>('[data-cutoff]')!;
+    const volume = root.querySelector<HTMLInputElement>('[data-volume]')!;
+    const canvas = root.querySelector<HTMLCanvasElement>('[data-wave]')!;
+    const responseCanvas = root.querySelector<HTMLCanvasElement>('[data-response]')!;
+    const play = root.querySelector<HTMLButtonElement>('[data-play]')!;
+    const status = root.querySelector<HTMLElement>('[data-audio-status]')!;
+    const frequencies = [220, 2200];
+    let listening: 'input' | 'output' = 'output';
+    let context: AudioContext | undefined;
+    let master: GainNode | undefined;
+    let voice: { source: AudioBufferSourceNode; gain: GainNode } | undefined;
+    let playing = false;
+    let pending = false;
+    let autoStop: ReturnType<typeof setTimeout> | undefined;
+    const fc = () => 10 ** Number(cutoff.value);
+    const response = (f: number) => ({ gain: 1 / Math.hypot(1, f / fc()), phase: -Math.atan(f / fc()) });
+    const signal = (time: number, filtered: boolean) => frequencies.reduce((sum, f) => {
+      const r = response(f);
+      return sum + 0.5 * (filtered ? r.gain : 1) * Math.sin(2 * Math.PI * f * time + (filtered ? r.phase : 0));
+    }, 0);
+
+    const retire = () => {
+      if (!voice || !context) return;
+      const old = voice;
+      voice = undefined;
+      const now = context.currentTime;
+      old.gain.gain.cancelScheduledValues(now);
+      old.gain.gain.setValueAtTime(old.gain.gain.value, now);
+      old.gain.gain.linearRampToValueAtTime(0, now + 0.025);
+      old.source.stop(now + 0.03);
+      old.source.onended = () => { old.source.disconnect(); old.gain.disconnect(); };
+    };
+    const updateAudio = () => {
+      if (!playing || !context || !master) return;
+      // Integer-Hz tones make this one-second steady-state buffer seamless.
+      const buffer = context.createBuffer(1, context.sampleRate, context.sampleRate);
+      const samples = buffer.getChannelData(0);
+      for (let i = 0; i < samples.length; i++) samples[i] = signal(i / context.sampleRate, listening === 'output');
+      retire();
+      const source = context.createBufferSource();
+      const gain = context.createGain();
+      source.buffer = buffer;
+      source.loop = true;
+      source.connect(gain).connect(master);
+      const start = context.currentTime + 0.005;
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(1, start + 0.025);
+      // Keep the same time origin when changing cutoff or comparing input/output.
+      source.start(start, start % 1);
+      voice = { source, gain };
+      status.textContent = `Playing ${listening === 'input' ? 'input' : 'filtered output'}. Stops automatically after 30 seconds.`;
+    };
+    const stop = () => {
+      playing = false;
+      retire();
+      clearTimeout(autoStop);
+      play.textContent = 'Play audio';
+      play.setAttribute('aria-pressed', 'false');
+      status.textContent = 'Audio stopped. Press play to listen again.';
+    };
+    const drawResponse = () => {
+      const t = theme();
+      const { ctx, width } = fitCanvas(responseCanvas, 265);
+      const box = { x: 46, y: 34, w: Math.max(1, width - 78), h: 184 };
+      const x = (f: number) => box.x + Math.log10(f / 20) / 3 * box.w;
+      const y = (db: number) => box.y - db / 60 * box.h;
+      const db = (f: number) => 20 * Math.log10(response(f).gain);
+      ctx.font = `11px ${t.mono}`;
+      ctx.lineWidth = 1;
+      for (const gain of [0, -20, -40, -60]) {
+        ctx.strokeStyle = t.line;
+        ctx.beginPath(); ctx.moveTo(box.x, y(gain)); ctx.lineTo(box.x + box.w, y(gain)); ctx.stroke();
+        ctx.fillStyle = t.muted; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+        ctx.fillText(`${gain}`, box.x - 8, y(gain));
+      }
+      const ticks = width < 420 ? [20, 200, 2000, 20000] : [20, 100, 1000, 10000, 20000];
+      for (const f of ticks) {
+        ctx.strokeStyle = t.line;
+        ctx.beginPath(); ctx.moveTo(x(f), box.y); ctx.lineTo(x(f), box.y + box.h); ctx.stroke();
+        ctx.fillStyle = t.muted; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+        ctx.fillText(f >= 1000 ? `${f / 1000}k` : String(f), x(f), box.y + box.h + 8);
+      }
+      ctx.fillStyle = t.muted; ctx.textAlign = 'left';
+      ctx.fillText('dB', 6, 12);
+      ctx.textAlign = 'center'; ctx.fillText('Frequency (Hz · log scale)', box.x + box.w / 2, 249);
+      // The corner stays at -3.01 dB as the response shifts along the log axis.
+      ctx.setLineDash([4, 4]); ctx.strokeStyle = t.muted;
+      ctx.beginPath(); ctx.moveTo(box.x, y(-3.0103)); ctx.lineTo(box.x + box.w, y(-3.0103)); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x(fc()), box.y); ctx.lineTo(x(fc()), box.y + box.h); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = t.fg;
+      ctx.textAlign = fc() > 5000 ? 'right' : 'left';
+      ctx.fillText(`fc: ${Math.round(fc()).toLocaleString()} Hz · −3 dB`, x(fc()) + (fc() > 5000 ? -4 : 4), 10);
+      ctx.strokeStyle = t.accent; ctx.lineWidth = 2.5; ctx.beginPath();
+      for (let i = 0; i <= 600; i++) {
+        const f = 20 * 10 ** (3 * i / 600);
+        if (i === 0) ctx.moveTo(x(f), y(db(f))); else ctx.lineTo(x(f), y(db(f)));
+      }
+      ctx.stroke();
+      frequencies.forEach((f, i) => {
+        ctx.strokeStyle = t.muted; ctx.lineWidth = 1; ctx.setLineDash([2, 4]);
+        ctx.beginPath(); ctx.moveTo(x(f), y(db(f))); ctx.lineTo(x(f), box.y + box.h); ctx.stroke();
+        ctx.setLineDash([]); ctx.fillStyle = t.accent;
+        ctx.beginPath(); ctx.arc(x(f), y(db(f)), 4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = t.fg; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+        ctx.fillText(i ? '2.2 kHz' : '220 Hz', x(f), y(db(f)) + 10);
+      });
+      ctx.fillStyle = t.fg; ctx.beginPath(); ctx.arc(x(fc()), y(-3.0103), 3, 0, Math.PI * 2); ctx.fill();
+      responseCanvas.setAttribute('aria-label', `Magnitude response, cutoff ${Math.round(fc())} Hz at −3 dB. 220 Hz: ${db(220).toFixed(1)} dB; 2200 Hz: ${db(2200).toFixed(1)} dB. Frequency axis is logarithmic.`);
+    };
+
+    const draw = () => {
+      drawResponse();
+      root.querySelector<HTMLOutputElement>('[data-cutoff-out]')!.value = `${Math.round(fc()).toLocaleString()} Hz`;
+      cutoff.setAttribute('aria-valuetext', `${Math.round(fc())} hertz`);
+      frequencies.forEach((f, i) => {
+        const gain = response(f).gain;
+        const key = i ? 'high' : 'low';
+        root.querySelector<HTMLMeterElement>(`[data-${key}-meter]`)!.value = gain;
+        root.querySelector<HTMLOutputElement>(`[data-${key}]`)!.value = `${(gain * 100).toFixed(1)}% amplitude · ${(20 * Math.log10(gain)).toFixed(1)} dB`;
+      });
+      const t = theme();
+      const { ctx, width } = fitCanvas(canvas, 230);
+      const box = { x: 38, y: 12, w: Math.max(1, width - 68), h: 180 };
+      const { x, y } = panel(ctx, box, [0, 20], [-1.1, 1.1], '');
+      for (const filtered of [false, true]) {
+        ctx.strokeStyle = filtered ? t.accent : t.muted;
+        ctx.lineWidth = filtered ? 2.4 : 1;
+        ctx.globalAlpha = filtered ? 1 : 0.55;
+        ctx.beginPath();
+        for (let i = 0; i <= 1600; i++) {
+          const time = i / 1600 * 0.02;
+          const px = x(time * 1000), py = y(signal(time, filtered));
+          if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = t.muted;
+      ctx.font = `11px ${t.mono}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      for (const ms of [0, 5, 10, 15, 20]) ctx.fillText(`${ms} ms`, x(ms), 201);
+    };
+    cutoff.addEventListener('input', () => { draw(); updateAudio(); });
+    root.querySelectorAll<HTMLButtonElement>('[data-preset]').forEach(button => button.addEventListener('click', () => {
+      cutoff.value = String(Math.log10(Number(button.dataset.preset)));
+      draw(); updateAudio();
+    }));
+    root.querySelectorAll<HTMLButtonElement>('[data-listen]').forEach(button => button.addEventListener('click', () => {
+      listening = button.dataset.listen as 'input' | 'output';
+      root.querySelectorAll('[data-listen]').forEach(b => b.setAttribute('aria-pressed', String(b === button)));
+      updateAudio();
+    }));
+    volume.addEventListener('input', () => {
+      if (context && master) master.gain.setTargetAtTime(Number(volume.value), context.currentTime, 0.015);
+    });
+    play.addEventListener('click', async () => {
+      if (pending) return;
+      if (playing) { stop(); return; }
+      pending = true;
+      play.disabled = true;
+      try {
+        context ??= new AudioContext();
+        if (!master) { master = context.createGain(); master.connect(context.destination); }
+        await context.resume();
+        if (document.hidden) return;
+        master.gain.setValueAtTime(Number(volume.value), context.currentTime);
+        playing = true;
+        play.textContent = 'Stop audio';
+        play.setAttribute('aria-pressed', 'true');
+        updateAudio();
+        autoStop = setTimeout(stop, 30000);
+      } catch (error) {
+        console.warn('Filter audio could not start:', error);
+        stop();
+        status.textContent = 'Audio could not start in this browser. The plot and cutoff controls still work.';
+      } finally { pending = false; play.disabled = false; }
+    });
+    document.addEventListener('visibilitychange', () => { if (document.hidden) stop(); });
+    window.addEventListener('pagehide', () => { stop(); void context?.close(); context = undefined; master = undefined; });
+    redrawOn(canvas, draw);
+    redrawOn(responseCanvas, drawResponse);
+  }
+</script>

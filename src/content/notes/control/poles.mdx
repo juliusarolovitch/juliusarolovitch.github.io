@@ -1,0 +1,210 @@
+---
+title: Poles and the characteristic equation
+updated: 2026-10-31
+order: 5
+draft: true
+---
+
+import PoleExplorer from '../../../components/control/PoleExplorer.astro';
+import ComplexPlaneMap from '../../../components/control/ComplexPlaneMap.astro';
+import ModeSplit from '../../../components/control/ModeSplit.astro';
+
+Disturb a system and then leave it alone. A warm room cools. A plucked string rings. A car that has just driven over a speed bump bobs once or twice and settles. A pencil balanced on its tip falls over. None of these motions needs an input to keep going: each is the system's own response to the state it was left in. We call such a motion the **natural response**.
+
+A **mode** is a characteristic pattern of motion with its own rate of growth or decay and, possibly, its own frequency. Here we find a system's modes from its model, see how the starting state decides how much of each mode appears, and see how the same modes show up as the poles of a transfer function.
+
+## Natural response from an initial state
+
+Return to the bicopter from [representing dynamic systems](/notes/control/representing-systems/). A light beam carries a rotor at each end, drag slows its heave, roll damping slows its roll, and the throttle now holds hover. With $v_L$ and $v_R$ the vertical speeds of the left and right arms, the model was
+
+$$
+\begin{bmatrix}\dot v_L\\\dot v_R\end{bmatrix}
+=
+\underbrace{\begin{bmatrix}-2&1\\1&-2\end{bmatrix}}_{A}
+\begin{bmatrix}v_L\\v_R\end{bmatrix}.
+$$
+
+Before doing any algebra, let us guess how the bicopter likes to move.
+
+Suppose both arms start rising at one unit of speed. The two arm speeds are equal, so the beam does not roll and roll damping has nothing to resist. Each arm is simply slowed by drag, at the same rate as the other. They slow together and stay equal at every instant. The pattern "both arms rising together" - pure heave - keeps its shape; only its size shrinks.
+
+Now suppose the left arm starts rising at one unit and the right arm falling at one unit. This time the beam is rolling, and roll damping is busy resisting it. Each arm is slowed both by drag and by roll damping. By symmetry, the left arm slows exactly as fast as the right arm does, so the two speeds stay equal and opposite. This pattern - pure roll - also keeps its shape. But two mechanisms now work to erase it instead of one, so it should fade faster.
+
+Let us check both guesses against the model. For the first pattern, $\mathbf{v}_s=\begin{bmatrix}1&1\end{bmatrix}^\mathsf{T}$,
+
+$$
+A\mathbf{v}_s=\begin{bmatrix}-2+1\\1-2\end{bmatrix}=\begin{bmatrix}-1\\-1\end{bmatrix}=-1\cdot\mathbf{v}_s.
+$$
+
+For the second, $\mathbf{v}_f=\begin{bmatrix}1&-1\end{bmatrix}^\mathsf{T}$,
+
+$$
+A\mathbf{v}_f=\begin{bmatrix}-2-1\\1+2\end{bmatrix}=\begin{bmatrix}-3\\3\end{bmatrix}=-3\cdot\mathbf{v}_f.
+$$
+
+In both cases, the matrix $A$ does not turn the vector at all. It only scales it.
+
+### Eigenvectors and eigenvalues
+
+A nonzero vector $\mathbf{v}$ that $A$ only scales,
+
+$$
+A\mathbf{v}=\lambda\mathbf{v},
+$$
+
+is called an **eigenvector** of $A$, and the scale factor $\lambda$ is the matching **eigenvalue**. The bicopter has the eigenvector $\mathbf{v}_s$ with eigenvalue $\lambda_s=-1$ and the eigenvector $\mathbf{v}_f$ with eigenvalue $\lambda_f=-3$. The subscripts stand for slow and fast.
+
+Why does this matter for motion? Start the state exactly along an eigenvector, $\mathbf{x}(0)=c\mathbf{v}$, and try the guess $\mathbf{x}(t)=c\,e^{\lambda t}\mathbf{v}$. Differentiating gives $\dot{\mathbf{x}}=\lambda c\,e^{\lambda t}\mathbf{v}$, while the model asks for $A\mathbf{x}=c\,e^{\lambda t}A\mathbf{v}=\lambda c\,e^{\lambda t}\mathbf{v}$. The two agree, so the guess is the solution. A state that starts along an eigenvector stays along it forever. The eigenvector is the *shape* of the motion: which state variables move together, and in what proportion. The eigenvalue is its *time law*: the rate $\lambda$ in the pattern $e^{\lambda t}$. Together they make one **mode**.
+
+For the bicopter, heave decays as $e^{-t}$, and roll decays as $e^{-3t}$, three times faster, just as we guessed. Heave and roll are also exactly the collective and differential directions that a flight controller's mixer commands: the mixer speaks to the bicopter in its own modes.
+
+### Any initial state is a mix of modes
+
+Most starting states are not along an eigenvector. Suppose only the left arm is moving, rising at two units, $\mathbf{x}(0)=\begin{bmatrix}2&0\end{bmatrix}^\mathsf{T}$. This state is not a mode, but it is a sum of the two, $\mathbf{x}(0)=\mathbf{v}_s+\mathbf{v}_f$. The model is linear, so each piece evolves as if the other were absent, and the responses add:
+
+$$
+\mathbf{x}(t)=e^{-t}\mathbf{v}_s+e^{-3t}\mathbf{v}_f
+=\begin{bmatrix}e^{-t}+e^{-3t}\\e^{-t}-e^{-3t}\end{bmatrix}.
+$$
+
+At first both modes are present. The fast mode, the roll, dies out within about one time unit, so after that the two arms move at nearly the same speed. What remains is the slow mode, a common climb that decays toward hover.
+
+Nothing in this argument was special to the bicopter. If a system with $n$ state variables has $n$ independent eigenvectors $\mathbf{v}_1,\ldots,\mathbf{v}_n$, any initial state can be written as a sum of them, $\mathbf{x}(0)=\sum_i c_i\mathbf{v}_i$, and each piece evolves on its own:
+
+$$
+\boxed{\mathbf{x}(t)=\sum_{i=1}^{n}c_i\,e^{\lambda_i t}\mathbf{v}_i.}
+$$
+
+This one equation keeps three ideas apart that are easy to blur together:
+
+- $\mathbf{v}_i$ says *which pattern of state variables moves together*;
+- $\lambda_i$ says *how that pattern grows, decays, or oscillates*;
+- $c_i$ says *how much of that pattern the initial state contains*.
+
+The eigenvectors and eigenvalues belong to the system. The coefficients $c_i$ belong to the experiment. Start the bicopter differently and the $c_i$ change, but the rates $-1$ and $-3$ do not.
+
+Below, drag the starting state anywhere in the plane of the two arm speeds. The dotted diagonals are the two eigenvectors: heave along $v_L=v_R$ and roll along $v_L=-v_R$. Things to try:
+
+- Start from *left arm only*. The start splits into one unit of heave and one unit of roll. The roll arrow shrinks three times faster, so the path bends onto the heave diagonal, and the bicopter levels its roll speed but keeps the tilt it has already picked up.
+- Choose *pure heave* or *pure roll*. Now only one mode is present, and the state slides straight along its own diagonal into the origin without ever bending.
+- Drag the start across the heave diagonal. The roll component changes sign, and so does the direction in which the bicopter tilts.
+
+<ModeSplit />
+
+## The characteristic equation
+
+For the bicopter, physical intuition handed us the eigenvectors. For a less symmetric system we need a recipe. Rewrite $A\mathbf{v}=\lambda\mathbf{v}$ as $(\lambda I-A)\mathbf{v}=\mathbf{0}$. A nonzero $\mathbf{v}$ can satisfy this only if the matrix $\lambda I-A$ squashes some direction to zero, which happens exactly when its determinant vanishes:
+
+$$
+\det(\lambda I-A)=0.
+$$
+
+This is the **characteristic equation**. The left side is a polynomial in $\lambda$ of degree $n$, called the **characteristic polynomial** of $A$, and its $n$ roots are the eigenvalues. For the bicopter,
+
+$$
+\det\begin{bmatrix}\lambda+2&-1\\-1&\lambda+2\end{bmatrix}=(\lambda+2)^2-1=(\lambda+1)(\lambda+3),
+$$
+
+which gives $\lambda=-1$ and $\lambda=-3$. Substituting each eigenvalue back into $(\lambda I-A)\mathbf{v}=\mathbf{0}$ and solving gives the matching eigenvector. In practice, a computer does this step; what we need is the meaning of the answer.
+
+## Reading eigenvalues on the complex plane
+
+Eigenvalues can also be complex. Since each mode evolves as $e^{\lambda t}$, write
+
+$$
+\lambda=\sigma+j\omega, \qquad e^{\lambda t}=e^{\sigma t}e^{j\omega t}.
+$$
+
+The real part $\sigma$ sets the envelope: decay if $\sigma<0$, growth if $\sigma>0$. The imaginary part $\omega$ sets the turning rate, and therefore the frequency of oscillation. Plotting each eigenvalue as a point in the complex plane turns a list of numbers into a map of the system's natural motions. Each cross below is an eigenvalue, and each small trace shows the motion of its mode over the same stretch of time. Left of the imaginary axis, modes decay; right of it, they grow; on it, they persist. Distance from the real axis sets how fast a mode oscillates.
+
+<ComplexPlaneMap />
+
+The map is read the same way everywhere:
+
+| Eigenvalue | Modal motion | Interpretation |
+| --- | --- | --- |
+| $-a$, with $a>0$ | $e^{-at}$ | decays without oscillating; farther left is faster |
+| $+a$ | $e^{at}$ | grows without oscillating |
+| $0$ | constant | holds its value forever; an integrator |
+| $\pm j\omega$ | sine and cosine | oscillates forever at a constant size |
+| $\sigma\pm j\omega$ | $e^{\sigma t}$ times a sinusoid | oscillates inside a shrinking or growing envelope |
+| repeated $\lambda$, too few eigenvectors | includes $t\,e^{\lambda t}$ | an extra factor of $t$ |
+
+A complex eigenvalue might seem to promise a complex-valued motion of real speeds or positions. It does not, because complex eigenvalues of a real matrix always come in conjugate pairs. If $A\mathbf{v}=\lambda\mathbf{v}$, taking the complex conjugate of both sides gives $A\bar{\mathbf{v}}=\bar\lambda\bar{\mathbf{v}}$, since $A$ has only real entries. A real initial state always contains the two modes in conjugate amounts, and their sum is real. One conjugate pair is one real oscillation.
+
+## From eigenvalues to poles
+
+So far the input has been off. Turn it back on, and add the sensor:
+
+$$
+\begin{aligned}
+\dot{\mathbf{x}}&=A\mathbf{x}+B\mathbf{u},\\
+\mathbf{y}&=C\mathbf{x}+D\mathbf{u}.
+\end{aligned}
+$$
+
+Take the Laplace transform of the state equation, keeping the initial state:
+
+$$
+\mathbf{X}(s)=
+\underbrace{(sI-A)^{-1}\mathbf{x}(0)}_{\text{from the initial state}}
++
+\underbrace{(sI-A)^{-1}B\mathbf{U}(s)}_{\text{driven by the input}}.
+$$
+
+Both parts contain the same matrix $(sI-A)^{-1}$. Its inverse is built from entries divided by $\det(sI-A)$, which is the characteristic polynomial written in the variable $s$. Its roots are the eigenvalues of $A$. So the response to the initial state and the response to the input are made of the same modes. The initial state sets their sizes at $t=0$; the input keeps adding new amounts of them afterward.
+
+With zero initial state, the second part alone gives the transfer function $G(s)=C(sI-A)^{-1}B+D$, and its **poles** are the values of $s$ at which it becomes infinite. Every pole of $G$ is therefore an eigenvalue of $A$. The words emphasize different views of one number:
+
+- **eigenvalue** emphasizes the internal state matrix;
+- **pole** emphasizes one input-output transfer function;
+- **mode rate** emphasizes the motion in time.
+
+The converse can fail. The bicopter has the eigenvalues $-1$ and $-3$, but the transfer function from collective throttle to sensor has only the pole $-1$. An eigenvalue becomes a pole of a particular path only if the input of that path can push on the mode and its output can see it.
+
+## Example: A mass-spring-damper
+
+Let's put the whole chain together on the simplest system with an interesting set of poles: a cart of mass $m$ on a spring of stiffness $k$ and a damper with coefficient $c$, pushed by a force $F$,
+
+$$
+m\ddot x+c\dot x+kx=F.
+$$
+
+**Route 1: from the differential equation.** Look for natural motions of the form $x(t)=e^{st}$ with $F=0$. Every derivative becomes a factor of $s$, so
+
+$$
+(ms^2+cs+k)\,e^{st}=0 \quad\Longrightarrow\quad ms^2+cs+k=0.
+$$
+
+**Route 2: from state space.** With $\mathbf{x}=\begin{bmatrix}x&\dot x\end{bmatrix}^\mathsf{T}$, the cart has $A=\begin{bmatrix}0&1\\-k/m&-c/m\end{bmatrix}$, and
+
+$$
+\det(sI-A)=\det\begin{bmatrix}s&-1\\k/m&s+c/m\end{bmatrix}=s^2+\frac{c}{m}s+\frac{k}{m}.
+$$
+
+Multiplying through by $m$ gives the same polynomial. The two routes must agree - they describe the same cart. And the transfer function from force to position, $G(s)=1/(ms^2+cs+k)$, has this polynomial as its denominator, so its poles are the same two numbers once more. The roots are
+
+$$
+s=\frac{-c\pm\sqrt{c^2-4mk}}{2m}.
+$$
+
+Everything about the cart's natural motion now depends on the sign of $c^2-4mk$. Take $m=1$ and $k=4$:
+
+| Damping $c$ | Poles | Motion |
+| --- | --- | --- |
+| $5$ | $-1$ and $-4$ | **overdamped**: two decaying modes, no oscillation |
+| $4$ | $-2$, twice | **critically damped**: the fastest return without overshoot |
+| $1$ | $-0.5\pm1.94j$ | **underdamped**: a decaying oscillation |
+| $0$ | $\pm2j$ | **undamped**: oscillates forever |
+| $-0.5$ | $0.25\pm1.98j$ | negative damping: the oscillation grows |
+
+It is common to rewrite the polynomial as $s^2+2\zeta\omega_n s+\omega_n^2$, with the **natural frequency** $\omega_n=\sqrt{k/m}$ and the **damping ratio** $\zeta=c/(2\sqrt{mk})$. The spring and mass set how fast the cart wants to swing; the damper decides how much of that swing survives. The cases above are then simply $\zeta>1$, $\zeta=1$, $0<\zeta<1$, $\zeta=0$, and $\zeta<0$.
+
+Things to try below, starting from $m=1$, $k=4$, $c=1$:
+
+- Lower $c$ to zero. The pair of poles slides right onto the imaginary axis, and the response becomes a sinusoid that never decays.
+- Raise $c$ slowly. The pair moves left along a circle of radius $\omega_n=2$ - the decay speeds up while the frequency drops - until at $c=4$ the two poles meet on the real axis. Keep going and they split, one heading left and one creeping back towards the origin. Note that the response gets *slower* past this point: the pole near the origin dominates.
+- Push $c$ below zero. The poles cross into the right half-plane and the response grows.
+- With the poles complex, raise $k$. A stiffer spring pushes them further from the real axis - a faster oscillation with the same decay envelope, since the real part $-c/2m$ does not depend on $k$.
+
+<PoleExplorer />

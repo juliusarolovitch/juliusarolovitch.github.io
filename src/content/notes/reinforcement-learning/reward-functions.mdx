@@ -1,0 +1,184 @@
+---
+title: Reward functions
+updated: 2026-10-31
+order: 1
+draft: false
+---
+
+import ShapingGrid from '../../../components/rl/ShapingGrid.astro';
+import AliveBonus from '../../../components/rl/AliveBonus.astro';
+import DualAscent from '../../../components/rl/DualAscent.astro';
+
+## Introduction
+
+Given an MDP $\mathcal{M} = (\mathcal{S}, \mathcal{A}, P, R, \rho_0, \gamma)$ - representing state space, action space, transition kernel, reward function, initial state distribution, and discount factor - and the standard objective $J(\pi) = \mathbb{E}_{\pi}[\sum_t \gamma^t R_t]$, we design reward functions to shape the behaviour of a policy. Reward function failure modes can be largely grouped into two:
+
+1. **Misspecification**, whereby the reward's optimum is not what we wanted. The agent succeeds at the stated problem but the reward didn't represent the desired behavior.
+2. **Uninformativeness**, whereby the reward's optimum is correct but unreachable by the optimizer. The reward carries too little gradient to guide the search, classically because it is too sparse.
+
+The obvious cure for an uninformative reward is to add dense intermediate rewards for behaviours we deem useful, though each such addition adds the risk of misspecification whereby the reward now rewards the hypothesis about good behavior rather than the desired outcome. The obvious cure for misspecification is to reward only the true outcome, which is typically sparse. This is the primary tradeoff in reward design.
+
+## Basic Transformations of a Reward
+
+Reinforcement learning rests on the premise that goals and purposes can be adequately represented in a single, scalar signal through the sum of individual terms. Writing $R = \sum_i w_iR_i$ specifies a tradeoff between individual objectives. The optimizer will find and exploit that exchange rate at the extremes, where our intuitions about the weights were never tested.
+
+### Safe Transformations
+
+- **Positive Scaling** - for $\alpha > 0$, replacing $R$ with $\alpha R$ does not change the optimal policy set. Hence, the absolute reward magnitudes do not matter but relative magnitudes between terms do. One caveat, however, is that this invariance only holds for the unregularized objective. With a fixed entropy coefficient or temperature, scaling $R$ changes the optimal policy.
+- **Constant Offsets** - while replacing $R$ with $R+b$ may seem innocent, this is only the case in the infinite-horizon case. But in the episodic setting with a variable termination time $T$, the shift is:
+
+  $$
+  \Delta J(\pi) \;=\; b \cdot \mathbb{E}_{\pi}\!\left[ \sum_{t=0}^{T-1} \gamma^t \right]\;=\; \frac{b}{1-\gamma}\left( 1 - \mathbb{E}_{\pi}\!\left[ \gamma^{T} \right] \right),
+  $$
+
+  which depends on $\mathbb{E}_\pi[\gamma^T]$. It may be more clear to view it this way:
+
+  $$
+  \sum_{t=0}^{T-1} \gamma^t b = b\left(1+\gamma+\gamma^2+\cdots+\gamma^{T-1}\right) = b\,\frac{1-\gamma^T}{1-\gamma}
+  $$
+
+  A positive bias rewards survival, while a negative one punishes it. With a positive reward, an agent can be rewarded simply for existing without accomplishing the desired task. Hence, a policy is only invariant to a bias when the episode length doesn't depend on the policy.
+
+To see this in action, consider a corridor with a crash state at one end and the goal at the other, both terminal. The agent starts two cells from the crash and six from the goal. Every step pays $b$, and entering the goal pays an additional $+1$. The figure below solves for the optimal policy with value iteration and runs it from $S$. The plot underneath shows $b\frac{1-\gamma^T}{1-\gamma}$ - the return that the bonus alone adds to an episode of length $T$.
+
+A few things worth trying:
+
+- Start at $b = 0$, where the agent simply walks to the goal. Slowly increase $b$ - at around $b = 0.12$ (with $\gamma = 0.9$), staying alive becomes worth more than the goal and the agent paces back and forth forever.
+- Now push $b$ negative. Below roughly $b = -0.22$, each step costs enough that the agent takes the shortest way out of the episode, even though that means crashing.
+- Increase $\gamma$ towards $0.99$ and repeat the first experiment. The effective horizon grows, so a bonus of only $b = 0.02$ is now enough to make the agent never finish.
+
+<AliveBonus />
+
+## Potential-Based Reward Shaping
+
+Potential-based reward shaping involves assigning each state a score and paying the agent the change in that score as it moves. This is an alternative to rewarding the action itself. The danger comes from a potential function that creates a cycle in the state space which the agent can farm without achieving the goal itself. Any cycle in the state space must have a net reward of zero to ensure this is impossible. Another important caveat is that adding correct potential-based reward shaping does not change the optimal policy set, it simply changes (*shapes*) how easy it is for the optimizer to discover it.
+
+Suppose we augment $R$ with an additional shaping term $F(s, a, s')$, producing $\mathcal{M}' = (\mathcal{S}, \mathcal{A}, P, R + F, \rho_0, \gamma)$. The shaping term is governed by the potential function $\Phi(s)$. When is the optimal policy unchanged?
+
+**Theorem:** Let $\Phi : \mathcal{S} \to \R$ be any bounded function and define $F(s, a, s') = \gamma \Phi(s') - \Phi(s).$ Then every optimal policy of $\mathcal{M}'$ is optimal in $\mathcal{M}$ and vice versa. Moreover, the optimal action-value functions are related by:
+
+$$
+Q^*_{\mathcal{M}'}(s, a) = Q^*_{\mathcal{M}}(s, a) - \Phi(s).
+$$
+
+One might ask why several intuitive alternatives to the shaping term do not work. We go through them one by one:
+
+1. Imagine we define $F(s,s') = \Phi(s')$, where $\Phi$ is how close to the goal a state is. Then, every time you enter a desirable state you get a reward, which may seem reasonable at first glance. However, the agent will then prefer taking detours to the goal before it collects more shaping reward!
+2. Suppose we instead define $F(s,s')=\Phi(s')-\Phi(s)$. Now the agent only gets rewarded for making progress. However recall that the MDP discounts future rewards ($G=r_0+\gamma r_1+\gamma^2 r_2+\cdots$). Then, the discounted shaping term becomes $(\Phi(s_1)-\Phi(s_0))+\gamma(\Phi(s_2)-\Phi(s_1))+\gamma^2(\Phi(s_3)-\Phi(s_2))+\cdots$ - note that the shaping term now depends on the trajectory that the agent takes since the terms do not cancel out.
+3. With $F(s, a, s') = \gamma \Phi(s') - \Phi(s)$ the intermediate terms cancel and the reward becomes a function of the starting state. The total trajectory reward becomes $-\Phi(s_0)+\gamma^T\Phi(s_T)$, where as $\gamma^T \to 0$ as the episode goes on the total reward becomes purely a function of the starting state.
+
+More broadly, reward shaping is a guess of the value function. A bad $\Phi$ cannot corrupt the optimum but can badly slow learning. The quality of the potential is judged by $\|\Phi - V^{\star}\|$, as in to say that it also must be of a similar scale.
+
+As an example, for a robot that must reach a goal, we can define a potential function of Euclidean distance to the goal. However, in the presence of obstacles, the potential shaping term will fight the optimizer to find the optimal policy around the obstacle.
+
+We can see this in the gridworld displayed below. The agent starts at $S$ and must reach $G$, which pays $+1$ and ends the episode, with $\gamma = 0.9$. A wall separates the two with a gap at the bottom, so the optimal path first has to move away from the goal. The potential is $k$ times the straight-line closeness to $G$ - exactly the Euclidean potential from the example above - and zero at $G$ itself since it is terminal. Arrows show the greedy policy from exact value iteration, and the line is the rollout from $S$.
+
+Things to try:
+
+- Select *show* $\Phi$ to see the potential. Note how it pulls the agent towards the wall rather than towards the gap.
+- Select $\Phi(s')$ and drag $k$ up from zero. Already at $k = 0.15$ the agent stops next to $G$ and never enters - parking beside the goal and collecting $\Phi$ every step beats the one-time $+1$.
+- Select $\Phi(s')-\Phi(s)$. It holds out longer, but from about $k = 1.15$ the agent again refuses to enter the goal, since stepping into the terminal state forfeits the potential it has built up.
+- Select $\gamma\Phi(s')-\Phi(s)$ and sweep $k$ across the whole range. The policy never differs from the unshaped optimum in a single cell - this is the theorem above at work. Switch between *show* $V$ and *show* $\Phi$: the values change, but their ordering over actions does not.
+
+<ShapingGrid />
+
+## The Informativeness Axis
+
+### The Cost of Sparsity
+
+Let's consider the canonical hard case - a deterministic MDP of horizon $H$ with $\vert \mathcal{A}\vert$ actions per state, where reward 1 is delivered only for one specific action sequence and 0 everywhere else. A uniform random policy reaches the reward with probability $\mathbb{P}(\text{success})=\vert \mathcal{A}\vert^{-H}$. Until then, the gradient is zero and there is hence nothing to learn from. Sparse-reward problems are hence exploration problems and are not an amenable setup to the optimizer for large horizons and action spaces.
+
+This is why the true task metric is often unusable as a training signal, while it may be the most faithful specification possible. The difficulty of credit assignment to states scales with the effective horizon $\frac{1}{1-\gamma}$ - the number of steps over which the reward must be propagated backwards. A potential $\Phi=V^*$ pre-propagates that information and reduces the effective horizon towards 1. Even a $\Phi$ capturing the coarse structure of $V^*$ shortens the horizon over which the optimizer must discover the rest.
+
+### Interaction of Dense Rewards with Terminal Rewards
+
+A dense per-step term of magnitude $c$ contributes $\frac{c}{1-\gamma}$ to the return. This is seen by expanding the rewards over time - the dense reward term contributes the same amount $c$ at each step: $c+\gamma c+\gamma^2c+\gamma^3c+\cdots$. When we factor out $c$, we find $c\left(1+\gamma+\gamma^2+\gamma^3+\cdots\right)$. The term inside the parentheses is an infinite geometric series:
+
+$$
+1+\gamma+\gamma^2+\gamma^3+\cdots=\frac{1}{1-\gamma},\qquad 0\leq\gamma<1.
+$$
+
+Hence, the overall dense term amounts to $\frac{c}{1-\gamma}$. When we provide a terminal event reward of magnitude $R_{term}$, we must compare its magnitude to the magnitude of the accumulated dense per-step reward to provide a meaningful gradient towards the desired terminal state.
+
+## Misspecification and Reward Hacking
+
+### Hackable Rewards
+
+Let $R^{\star}$ be the true objective and $\tilde{R}$ the proxy we optimize. Informally, *reward hacking* occurs when increasing $J_{\tilde{R}}$ decreases $J_{R^{\star}}$. An objective pair $(R^*, \tilde{R})$ is deemed *unhackable* if no policy improvement under the proxy ever corresponds to a regression under the true reward. Formally, an objective pair is unhackable iff:
+
+1. The ordering of rewards over all stochastic policies between any two states is *equivalent* by both objectives
+2. The ordering of rewards over all stochastic policies between any two states is *trivial* by at least one of the two objectives - i.e. the objective assigns the same return to all policies between the same two states
+
+Only in these two cases will an improvement in the proxy never regress the true reward.
+
+The second point is worth explaining more closely. One example of a trivial return is an objective that provides a reward of 1 at each step over episodes of $T$ timesteps. Then, if we know any two policies started at state $S_0$ and reached state $S_G$ both in $T$ timesteps, then their returns were equal no matter the intermediate trajectories. Another example is potential-based terms whose return over a trajectory between two states $S_S, S_G$ is simply $\gamma\Phi(S_G)-\Phi(S_S)$ - once again, the intermediate trajectory does not matter for the cumulative return.
+
+Hence, when shaping the reward we strive to construct a proxy for the true objective that does not admit a different ordering of policies in their return between the same start and goal states. Any proxy that induces a genuinely different ordering over policies - not merely a different numerical reward - admits some policy pair on which optimizing the proxy makes the true objective worse.
+
+### Multiplicative Rewards
+
+Another useful idea is as follows - the default reward is a weighted sum $R = \sum_i w_i R_i$. Its defining property is *substitutability* whereby the agent may abandon one term entirely if the resulting gain elsewhere exceeds the loss. When terms are conjunctive requirements - do the task *and* stay smooth *and* respect the limit - substitutability is wrong. The alternative is multiplicative composition:
+
+$$
+R = \prod_i R_i, \qquad\text{so per step}\qquad \log R = \sum_i \log R_i .
+$$
+
+With each $R_i \in (0,1]$. The cost for this is a bootstrapping problem - early in training, when some factor is near zero, the whole product is near zero everywhere and the gradient signal for the other factors is crushed. Multiplicative rewards therefore pair well with curricula or with hybrids in which the task terms multiply and the regularization terms are added.
+
+### Summary
+
+During training, a couple points are useful in practice:
+
+1. Maintain a true metric you don't optimize over and compare it to the proxy reward. Divergence between the two is indicative of hacking.
+   1. **Example:** consider a warehouse robot with a proxy reward of +1 per box moved while the real objective is to move unique boxes to the truck. The agent might discover that if it picks up one box, puts it down, and picks it up again then the proxy reward skyrockets. Meanwhile, the intended objective isn't being completed and the true objective stays at 0.
+2. Reward misspecification is more likely to surface later in training as optimizer capability improves. Rewards should be audited anytime capability is changed - e.g. more training time, larger NN, etc.
+   1. **Example:** consider a robot tasked with cleaning a room where its reward is volume of dirt collected into the dust pan. Early on in training the robot performs poorly and cleans only 10% of the room. It soon improves and cleans 90% of the room. Optimization pressure increases and the robot then finds that it can exploit rewards by dumping the dustpan onto the floor and then collecting the dirt back into it. The reward bug was always present but was not found by the weaker, earlier-stage policy.
+      1. The point here is that a more capable optimizer, either by means of having converged to a good policy or being run with greater capacity than previous runs, will be more likely to find loopholes in the reward. This does not mean that the loopholes were never there. When we increase capability, we must audit for reward hacking.
+3. When balancing multiple desired aspects of the behavior (e.g. maintaining altitude, minimizing control effort, maintaining airspeed) - bias towards including all of them in a reward rather than a subset that still appears to produce reasonable behavior. Sometimes we may see nominal behavior while only representing a subset of the desired behaviors in the reward, but the optimizer will optimize non-included variables to its desire to maximize rewards for the included ones. Hence, even an arbitrarily-weighted composition of all desired terms is safer than a tuned subset that appears to function well.
+
+## Review: Taxonomy of Rewards
+
+| Component | Role | Design Note |
+| --- | --- | --- |
+| Terminal | Encodes the goal | |
+| Shaping | Makes the task trainable | Should approximate $V^*$ |
+| Regularization | Control effort, smoothness | Scale in return units |
+| Constraint penalty | Safety and limits | Prefer a constrained MDP for soft limits, encode hard limits in the env |
+| Alive bonus | Episode-length preference | Not neutral |
+
+## Constrained MDPs
+
+When a requirement is a constraint - such as staying above an airspeed, keeping roll bounded - encoding it as a penalty term forces the optimizer to discover by trial and error the weight at which the constraint happens to bind. That weight depends on the reward scale, the discount, and the current policy, so it does not transfer between tasks. The principal alternative is a constrained MDP.
+
+Typically, we solve $\max_\pi J_R(\pi)$, where $J_R(\pi)=\mathbb{E}_\pi\left[\sum_{t=0}^\infty \gamma^t R_t\right]$ - the expected discounted return of the reward. Now suppose we're flying a drone and one of the constraints is to keep current below 70A. We can define another signal, $c(s,a,s')$, denoted *cost*. We can then define the discounted accumulated cost as $J_c(\pi)=\mathbb{E}_\pi\left[\sum_t \gamma^t c_t\right]$. We also specify the maximum cost we're willing to tolerate $d$.
+
+A constrained MDP can be formulated as:
+
+$$
+\max_{\pi} \; J_{R}(\pi) \qquad \text{subject to} \qquad J_c(\pi) \le d,
+$$
+
+and can be solved via the Lagrangian:
+
+$$
+\mathcal{L}(\pi, \lambda) = J_{R}(\pi) - \lambda \big( J_c(\pi) - d \big), \qquad \lambda \ge 0,
+$$
+
+alternating a policy update on the effective reward $R-\lambda c$ with a multiplier update:
+
+$$
+\lambda \;\leftarrow\; \big[ \lambda + \eta_\lambda \big( \hat{J}_c(\pi) - d \big) \big]_{+}.
+$$
+
+Since the primal problem is a maximization, the dual function $g(\lambda) = \max_\pi \mathcal{L}(\pi,\lambda)$ is minimized. The multiplier $\lambda$ is the penalty weight we would've otherwise tuned by hand but the update formulation tunes it automatically, increasing it while the constraint is violated and relaxing it once satisfied. We simply specify $d$ which is interpretable and task-meaningful.
+
+Below is a toy version of the drone example. The policy is a single parameter $\theta \in [0, 1]$ - think of it as how aggressively we fly - with reward $J_R = 1-(1-\theta)^2$ and current draw $J_c = 20 + 80\theta^2$ A. Each iteration takes one gradient step on $\theta$ for the effective reward $R-\lambda c$, followed by the multiplier update above. The dashed lines mark the limit $d$ and the optimal multiplier $\lambda^*$.
+
+Things to try:
+
+- With the defaults, watch the current overshoot the 70 A limit early on, and $\lambda$ rise until it pulls the current back to exactly $d$. $\lambda$ settles at $\lambda^*$ without us ever choosing a penalty weight.
+- Drag $\eta_\lambda$ all the way left. The multiplier now reacts slowly, and the current peaks near 87 A before the constraint is enforced. Drag it right and $\lambda$ tracks the violation almost immediately.
+- Lower $d$ to 50 A. The constraint is now more expensive and $\lambda^*$ more than doubles - a hand-tuned weight would have had to change with it.
+- Raise $d$ above 100 A, the most current this policy can ever draw. The constraint never binds and $\lambda$ stays at zero.
+
+<DualAscent />

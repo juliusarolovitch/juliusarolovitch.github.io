@@ -1,0 +1,728 @@
+---
+import { getCollection, render } from 'astro:content';
+import Base from '../layouts/Base.astro';
+import { topicLabel } from '../lib/notes';
+
+const books = (await getCollection('books', (b) => !b.data.draft)).sort(
+  (a, b) => a.data.order - b.data.order || a.data.author.localeCompare(b.data.author),
+);
+const shelf = await Promise.all(
+  books.map(async (b) => {
+    const seed = [...b.data.title].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 9973, 17);
+    const long = b.data.title.length > 28;
+    const height = long ? 210 : 170 + (seed % 5) * 8;
+    const surname = b.data.author.split(/,| and /)[0].trim().split(' ').pop() ?? '';
+    return {
+      id: b.id,
+      data: b.data,
+      Content: (await render(b)).Content,
+      width: Math.round(Math.min(56, Math.max(30, (b.data.pages ?? 300) / 11))),
+      height,
+      surname,
+      titleRoom: Math.round(height - 42 - surname.length * 6.2),
+      titleSize: long ? 0.75 : 0.85,
+      tint: 10 + (seed % 4) * 9,
+      finished: b.data.finished?.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }) ?? '',
+      recommended: !b.body?.trim(),
+      notesHref: b.data.notes ? `/notes/#${b.data.notes}` : '',
+      notesLabel: b.data.notes ? `My notes on ${topicLabel(b.data.notes)}` : '',
+    };
+  }),
+);
+const shelves = [
+  { title: 'Textbooks', books: shelf.filter((b) => b.data.kind === 'textbook') },
+  { title: 'Books', books: shelf.filter((b) => b.data.kind === 'book') },
+].filter((s) => s.books.length);
+---
+
+<Base title="Books">
+  <header class="page-head">
+    <h1>Bookshelf</h1>
+    <p>A collection of books that left a mark on me or I'm currently working through. I'll also include thoughts on them soon.</p>
+  </header>
+
+  {
+    shelves.map((group) => (
+      <section>
+        <h2 class="section-title">{group.title}</h2>
+        <div class="shelf" data-shelf>
+          {group.books.map((b) => (
+            <div class="slot">
+              <button
+                type="button"
+                class:list={['spine', b.recommended && 'ribbon']}
+                data-book={b.id}
+                aria-expanded="false"
+                aria-controls="stage"
+                aria-label={`${b.data.title} by ${b.data.author}${b.recommended ? ', recommended' : ''}`}
+                style={`--w: ${b.width}px; --h: ${b.height}px; --tint: ${b.tint}%; --room: ${b.titleRoom}px; --fs: ${b.titleSize}rem`}
+              >
+                <span class="spine-title">{b.data.title}</span>
+                <span class="spine-author">{b.surname}</span>
+              </button>
+            </div>
+          ))}
+        </div>
+      </section>
+    ))
+  }
+
+  <section id="stage" class="stage" data-stage aria-live="polite">
+    <p class="hint" data-hint>Pick a book from the shelf.</p>
+  </section>
+
+  {
+    shelf.map((b) => (
+      <template
+        data-source={b.id}
+        data-title={b.data.title}
+        data-author={b.data.author}
+        data-finished={b.finished}
+        data-tint={b.tint}
+        data-recommended={b.recommended ? 'yes' : ''}
+        data-blurb={b.data.blurb ?? ''}
+        data-link={b.data.link ?? ''}
+        data-notes-href={b.notesHref}
+        data-notes-label={b.notesLabel}
+      >
+        <b.Content />
+      </template>
+    ))
+  }
+</Base>
+
+<script>
+  const stage = document.querySelector<HTMLElement>('[data-stage]')!;
+  const hint = document.querySelector<HTMLElement>('[data-hint]')!;
+  const spines = [...document.querySelectorAll<HTMLButtonElement>('.spine')];
+  let current: { id: string; book: HTMLElement; leaves: HTMLElement[]; turned: number; nav: HTMLElement } | null = null;
+
+  const el = (tag: string, cls: string, html = '') => {
+    const node = document.createElement(tag);
+    node.className = cls;
+    node.innerHTML = html;
+    return node;
+  };
+
+  const paginate = (nodes: Element[]) => {
+    const byRule = nodes.some((n) => n.tagName === 'HR');
+    const pages: Element[][] = [[]];
+    for (const n of nodes) {
+      const breaks = byRule ? n.tagName === 'HR' : n.tagName === 'H2';
+      if (breaks && pages[pages.length - 1].length) pages.push([]);
+      if (!(n.tagName === 'HR')) pages[pages.length - 1].push(n);
+    }
+    return pages.filter((p) => p.length);
+  };
+
+  const setTurned = (n: number) => {
+    if (!current || !current.leaves.length) return;
+    const { leaves, book, nav } = current;
+    const target = Math.max(0, Math.min(leaves.length, n));
+    leaves.forEach((leaf, i) => {
+      const turned = i < target;
+      if (turned === leaf.classList.contains('turned')) return;
+      const settle = () => {
+        leaf.classList.remove('moving');
+        leaf.style.zIndex = String(leaf.classList.contains('turned') ? i + 1 : leaves.length - i);
+      };
+      leaf.classList.add('moving');
+      leaf.classList.toggle('turned', turned);
+      if (matchMedia('(prefers-reduced-motion: reduce)').matches) settle();
+      else leaf.addEventListener('transitionend', settle, { once: true });
+    });
+    current.turned = target;
+    book.classList.toggle('closed', target === 0);
+    const [prev, label, next] = nav.children as unknown as HTMLElement[];
+    (prev as HTMLButtonElement).disabled = target <= 1;
+    (next as HTMLButtonElement).disabled = target >= leaves.length;
+    label.textContent = target === 0 ? '' : target >= leaves.length ? 'the end' : `pages ${2 * target - 2 || 'i'}–${2 * target - 1}`;
+  };
+
+  const close = (focus = true) => {
+    if (!current) return;
+    const { id, book, nav } = current;
+    spines.forEach((s) => {
+      s.classList.remove('out');
+      s.setAttribute('aria-expanded', 'false');
+    });
+    document.querySelectorAll('[data-shelf]').forEach((s) => s.classList.remove('picking'));
+    book.remove();
+    nav.remove();
+    current = null;
+    hint.hidden = false;
+    history.replaceState(null, '', location.pathname);
+    if (focus) spines.find((s) => s.dataset.book === id)?.focus();
+  };
+
+  const open = (id: string) => {
+    const src = document.querySelector<HTMLTemplateElement>(`template[data-source="${CSS.escape(id)}"]`);
+    if (!src) return;
+    close(false);
+    const { title = '', author = '', finished = '', tint = '20', recommended, blurb = '', link = '', notesHref = '', notesLabel = '' } = src.dataset;
+    const notesLink = () => {
+      const a = el('a', 'notes-link');
+      a.setAttribute('href', notesHref);
+      a.textContent = `${notesLabel} →`;
+      return a;
+    };
+    const mark = () => {
+      spines.forEach((s) => {
+        const on = s.dataset.book === id;
+        s.classList.toggle('out', on);
+        s.setAttribute('aria-expanded', String(on));
+      });
+      document.querySelectorAll('[data-shelf]').forEach((s) => s.classList.add('picking'));
+      history.replaceState(null, '', `#${id}`);
+      hint.hidden = true;
+    };
+
+    if (recommended) {
+      const card = el(
+        'div',
+        'rec-card',
+        '<div class="mini-cover"><span class="cover-title"></span><span class="cover-rule"></span><span class="cover-author"></span></div><div class="rec-body"><p class="rec-label">Recommended</p><h2></h2><p class="by"></p><p class="blurb"></p><p class="rec-links"></p></div>',
+      );
+      card.style.setProperty('--tint', `${tint}%`);
+      card.querySelector('.mini-cover .cover-title')!.textContent = title;
+      card.querySelector('.mini-cover .cover-author')!.textContent = author;
+      card.querySelector('h2')!.textContent = title;
+      card.querySelector('.by')!.textContent = author;
+      card.querySelector('.blurb')!.textContent = blurb;
+      const links = card.querySelector('.rec-links')!;
+      if (link) {
+        const a = el('a', 'find-link');
+        a.setAttribute('href', link);
+        a.setAttribute('rel', 'noopener');
+        a.textContent = 'Find the book →';
+        links.append(a);
+      }
+      if (notesHref) links.append(notesLink());
+      const nav = el('div', 'book-nav', '<button type="button" class="put-back">Put it back</button>');
+      nav.querySelector('button')!.addEventListener('click', () => close());
+      stage.append(card, nav);
+      current = { id, book: card, leaves: [], turned: 0, nav };
+      mark();
+      stage.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      return;
+    }
+
+    const nodes = [...src.content.cloneNode(true).childNodes].filter((n): n is Element => n.nodeType === 1);
+    const pages = paginate(nodes);
+
+    const book = el('div', 'book closed');
+    book.style.setProperty('--tint', `${tint}%`);
+    book.append(el('div', 'base left'), el('div', 'base right', '<p class="end">The end.</p>'));
+
+    const faces: HTMLElement[] = [];
+    const cover = el('div', 'face front cover', `<span class="cover-title"></span><span class="cover-rule"></span><span class="cover-author"></span>`);
+    cover.querySelector('.cover-title')!.textContent = title;
+    cover.querySelector('.cover-author')!.textContent = author;
+    const titlePage = el('div', 'face back title-page', '<h2></h2><p class="by"></p><p class="when"></p>');
+    titlePage.querySelector('h2')!.textContent = title;
+    titlePage.querySelector('.by')!.textContent = author;
+    titlePage.querySelector('.when')!.textContent = finished ? `finished ${finished}` : '';
+    if (notesHref) titlePage.append(notesLink());
+    faces.push(cover, titlePage);
+    pages.forEach((page, i) => {
+      const face = el('div', `face ${i % 2 ? 'back' : 'front'} prose`);
+      face.append(...page);
+      face.append(el('span', 'folio', String(i + 1)));
+      faces.push(face);
+    });
+    if (faces.length % 2) faces.push(el('div', 'face back blank'));
+
+    const leaves: HTMLElement[] = [];
+    for (let i = 0; i < faces.length; i += 2) {
+      const leaf = el('div', 'leaf');
+      leaf.style.zIndex = String(faces.length / 2 - i / 2);
+      leaf.append(faces[i], faces[i + 1]);
+      const index = i / 2;
+      faces[i].addEventListener('click', (e) => {
+        if (!(e.target as HTMLElement).closest('a')) setTurned(index + 1);
+      });
+      faces[i + 1].addEventListener('click', (e) => {
+        if (!(e.target as HTMLElement).closest('a') && index > 0) setTurned(index);
+      });
+      leaves.push(leaf);
+      book.append(leaf);
+    }
+
+    const nav = el(
+      'div',
+      'book-nav',
+      '<button type="button" aria-label="Previous pages">←</button><span></span><button type="button" aria-label="Next pages">→</button><button type="button" class="put-back">Put it back</button>',
+    );
+    const [prev, , next, back] = nav.children as unknown as HTMLButtonElement[];
+    prev.addEventListener('click', () => current && setTurned(current.turned - 1));
+    next.addEventListener('click', () => current && setTurned(current.turned + 1));
+    back.addEventListener('click', () => close());
+
+    stage.append(book, nav);
+    current = { id, book, leaves, turned: 0, nav };
+    mark();
+    setTurned(0);
+    stage.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    setTimeout(() => current?.id === id && setTurned(1), 450);
+  };
+
+  spines.forEach((s) => s.addEventListener('click', () => (current?.id === s.dataset.book ? close() : open(s.dataset.book!))));
+  document.addEventListener('keydown', (e) => {
+    if (!current || (e.target as HTMLElement).closest('input, textarea')) return;
+    if (e.key === 'ArrowRight') setTurned(current.turned + 1);
+    if (e.key === 'ArrowLeft' && current.turned > 1) setTurned(current.turned - 1);
+    if (e.key === 'Escape') close();
+  });
+  const initial = decodeURIComponent(location.hash.slice(1));
+  if (spines.some((s) => s.dataset.book === initial)) open(initial);
+</script>
+
+<style>
+  .shelf {
+    --row: 226px;
+    --plank: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0 4px;
+    margin-top: 0.5rem;
+    padding: 0 12px;
+    background: repeating-linear-gradient(
+      to bottom,
+      transparent 0 calc(var(--row) - var(--plank)),
+      var(--line) calc(var(--row) - var(--plank)) calc(var(--row) - var(--plank) + 2px),
+      transparent calc(var(--row) - var(--plank) + 2px) var(--row)
+    );
+  }
+
+  .slot {
+    height: var(--row);
+    display: flex;
+    align-items: flex-end;
+    padding-bottom: var(--plank);
+  }
+
+  .spine {
+    position: relative;
+    min-width: var(--w);
+    height: var(--h);
+    padding: 16px 5px 12px;
+    border: 1px solid var(--line);
+    border-radius: 3px 3px 1px 1px;
+    cursor: pointer;
+    color: var(--fg);
+    background:
+      linear-gradient(to bottom, transparent 8%, var(--accent) 8% calc(8% + 1.5px), transparent calc(8% + 1.5px) calc(91% - 1.5px), var(--accent) calc(91% - 1.5px) 91%, transparent 91%),
+      color-mix(in srgb, var(--accent) var(--tint), var(--surface));
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    transition:
+      transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1),
+      opacity 0.3s ease;
+  }
+
+  .spine.ribbon::after {
+    content: '';
+    position: absolute;
+    top: -12px;
+    right: 22%;
+    width: 7px;
+    height: 22px;
+    background: var(--accent);
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 78%, 0 100%);
+  }
+
+  .spine:hover {
+    transform: translateY(-6px);
+  }
+
+  .spine:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+
+  .spine.out {
+    transform: translateY(-30px);
+  }
+
+  .shelf.picking .spine:not(.out) {
+    opacity: 0.45;
+  }
+
+  .spine-title {
+    writing-mode: vertical-rl;
+    font-family: var(--serif);
+    font-size: var(--fs);
+    font-weight: 600;
+    inline-size: var(--room);
+    flex: none;
+    line-height: 1.15;
+    overflow: hidden;
+  }
+
+  .spine-author {
+    writing-mode: vertical-rl;
+    font-family: var(--mono);
+    font-size: 0.56rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .stage {
+    margin-top: 2.5rem;
+    scroll-margin-top: 1rem;
+  }
+
+  .hint {
+    color: var(--muted);
+    font-style: italic;
+  }
+
+  .stage :global(.book) {
+    position: relative;
+    width: 100%;
+    height: 460px;
+    perspective: 2200px;
+    transition: transform 0.6s cubic-bezier(0.3, 0.7, 0.2, 1);
+  }
+
+  .stage :global(.book.closed) {
+    transform: translateX(-25%);
+  }
+
+  .stage :global(.base),
+  .stage :global(.face) {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    border: 1px solid var(--line);
+    background: var(--surface);
+  }
+
+  .stage :global(.base.left) {
+    left: 0;
+    width: 50%;
+    border-radius: 6px 0 0 6px;
+    background: color-mix(in srgb, var(--accent) var(--tint), var(--surface));
+    transition: opacity 0.4s ease;
+  }
+
+  .stage :global(.book.closed .base.left) {
+    opacity: 0;
+  }
+
+  .stage :global(.base.right) {
+    left: 50%;
+    width: 50%;
+    border-radius: 0 6px 6px 0;
+    display: grid;
+    place-items: center;
+    color: var(--muted);
+    font-style: italic;
+  }
+
+  .stage :global(.leaf) {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 50%;
+    height: 100%;
+    transform-origin: left center;
+    transform-style: preserve-3d;
+    transition: transform 0.85s cubic-bezier(0.3, 0.7, 0.2, 1);
+  }
+
+  .stage :global(.leaf.turned) {
+    transform: rotateY(-180deg);
+  }
+
+  .stage :global(.leaf.moving) {
+    z-index: 999 !important;
+  }
+
+  .stage :global(.face) {
+    inset: 0;
+    width: 100%;
+    padding: 1.6rem 1.7rem 2.2rem;
+    overflow-y: auto;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    font-size: 0.95rem;
+    margin: 0;
+  }
+
+  .stage :global(.face.front) {
+    border-radius: 0 6px 6px 0;
+    background:
+      linear-gradient(90deg, rgb(0 0 0 / 0.07), transparent 7%),
+      var(--surface);
+    cursor: e-resize;
+  }
+
+  .stage :global(.face.back) {
+    transform: rotateY(180deg);
+    border-radius: 6px 0 0 6px;
+    background:
+      linear-gradient(270deg, rgb(0 0 0 / 0.07), transparent 7%),
+      var(--surface);
+    cursor: w-resize;
+  }
+
+  .stage :global(.face.cover) {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 1rem;
+    padding: 2.5rem 2rem;
+    background:
+      linear-gradient(90deg, rgb(0 0 0 / 0.12) 0 4%, transparent 9%),
+      color-mix(in srgb, var(--accent) var(--tint), var(--surface));
+  }
+
+  .stage :global(.cover-title) {
+    font-family: var(--serif);
+    font-size: 1.6rem;
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--fg);
+  }
+
+  .stage :global(.cover-rule) {
+    width: 3rem;
+    height: 2px;
+    background: var(--accent);
+  }
+
+  .stage :global(.cover-author) {
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+
+  .stage :global(.title-page) {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .stage :global(.title-page h2) {
+    font-size: 1.5rem;
+    margin: 0 0 0.6rem;
+  }
+
+  .stage :global(.title-page .by) {
+    margin: 0;
+    color: var(--muted);
+  }
+
+  .stage :global(.title-page .when) {
+    margin: 1.5rem 0 0;
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+
+  .stage :global(.face > :first-child) {
+    margin-top: 0;
+  }
+
+  .stage :global(.folio) {
+    position: absolute;
+    bottom: 0.8rem;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--muted);
+  }
+
+  .stage :global(.notes-link),
+  .stage :global(.find-link) {
+    font-size: 0.9rem;
+  }
+
+  .stage :global(.title-page .notes-link) {
+    margin-top: 1.2rem;
+  }
+
+  .stage :global(.rec-card) {
+    display: grid;
+    grid-template-columns: 9.5rem 1fr;
+    gap: 1.75rem;
+    align-items: center;
+    padding: 1.5rem;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface);
+    animation: rec-in 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+
+  .stage :global(.mini-cover) {
+    aspect-ratio: 2 / 3;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.7rem;
+    padding: 1rem 0.9rem;
+    border: 1px solid var(--line);
+    border-radius: 3px 7px 7px 3px;
+    background:
+      linear-gradient(90deg, rgb(0 0 0 / 0.12) 0 4%, transparent 9%),
+      color-mix(in srgb, var(--accent) var(--tint), var(--surface));
+    transform: perspective(700px) rotateY(-12deg);
+    box-shadow: 0 16px 22px -16px rgb(0 0 0 / 0.5);
+  }
+
+  .stage :global(.mini-cover .cover-title) {
+    font-size: 1rem;
+  }
+
+  .stage :global(.mini-cover .cover-author) {
+    font-size: 0.72rem;
+  }
+
+  .stage :global(.rec-label) {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  .stage :global(.rec-body h2) {
+    margin: 0.3rem 0 0.2rem;
+    font-size: 1.45rem;
+  }
+
+  .stage :global(.rec-body .by) {
+    margin: 0;
+    color: var(--muted);
+  }
+
+  .stage :global(.rec-body .blurb) {
+    margin: 0.9rem 0 0;
+  }
+
+  .stage :global(.rec-links) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1.4rem;
+    margin: 1rem 0 0;
+  }
+
+  .stage :global(.rec-links:empty) {
+    display: none;
+  }
+
+  @keyframes rec-in {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @media (max-width: 560px) {
+    .stage :global(.rec-card) {
+      grid-template-columns: 1fr;
+    }
+
+    .stage :global(.mini-cover) {
+      width: 8rem;
+    }
+  }
+
+  .stage :global(.book-nav) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    margin-top: 1.1rem;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+
+  .stage :global(.book-nav span) {
+    min-width: 6rem;
+    text-align: center;
+  }
+
+  .stage :global(.book-nav button) {
+    font: inherit;
+    padding: 0.35rem 0.8rem;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--fg);
+    cursor: pointer;
+  }
+
+  .stage :global(.book-nav button:disabled) {
+    opacity: 0.35;
+    cursor: default;
+  }
+
+  .stage :global(.book-nav .put-back) {
+    margin-left: 1rem;
+  }
+
+  @media (max-width: 640px) {
+    .stage :global(.book),
+    .stage :global(.book.closed) {
+      height: auto;
+      perspective: none;
+      transform: none;
+    }
+
+    .stage :global(.base),
+    .stage :global(.face.blank) {
+      display: none;
+    }
+
+    .stage :global(.leaf),
+    .stage :global(.leaf.turned) {
+      position: static;
+      width: auto;
+      height: auto;
+      transform: none;
+      transform-style: flat;
+    }
+
+    .stage :global(.face),
+    .stage :global(.face.back) {
+      position: relative;
+      transform: none;
+      backface-visibility: visible;
+      border-radius: 6px;
+      margin-bottom: 0.75rem;
+      min-height: 9rem;
+      cursor: default;
+    }
+
+    .stage :global(.book-nav button:not(.put-back)),
+    .stage :global(.book-nav span) {
+      display: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .spine,
+    .stage :global(.book),
+    .stage :global(.leaf) {
+      transition: none;
+    }
+
+    .stage :global(.rec-card) {
+      animation: none;
+    }
+  }
+</style>

@@ -1,0 +1,113 @@
+---
+import data from '../../data/gc-stall-demo.json';
+---
+
+<figure class="viz" data-gctrace data-runs={JSON.stringify(data.runs)}>
+  <div class="viz-controls">
+    <div class="viz-seg">
+      <button type="button" data-view="all" aria-pressed="true">whole run</button>
+      <button type="button" data-view="zoom" aria-pressed="false">first full pass</button>
+    </div>
+  </div>
+  <canvas data-canvas role="img" aria-label="Measured heartbeat gaps over time, with and without gc.freeze(), with full collections shaded"></canvas>
+  <p class="viz-status" data-status></p>
+</figure>
+
+<script>
+  import { fitCanvas, panel, redrawOn, setStatus, theme } from '../../lib/viz';
+
+  type Run = { beats: number[]; full: [number, number][]; young: number };
+
+  for (const root of document.querySelectorAll<HTMLElement>('[data-gctrace]')) {
+    const canvas = root.querySelector<HTMLCanvasElement>('[data-canvas]')!;
+    const status = root.querySelector<HTMLElement>('[data-status]')!;
+    const buttons = [...root.querySelectorAll<HTMLButtonElement>('[data-view]')];
+    const runs = JSON.parse(root.dataset.runs!) as Record<'plain' | 'frozen', Run>;
+    const specs = [
+      { run: runs.plain, title: 'no freeze' },
+      { run: runs.frozen, title: 'gc.collect(); gc.freeze() after startup' },
+    ];
+    let view = 'all';
+
+    const draw = () => {
+      const t = theme();
+      const { ctx, width } = fitCanvas(canvas, 330);
+      const longest = Math.max(...specs.map((s) => Math.max(...s.run.beats.slice(1).map((b, i) => b - s.run.beats[i]))));
+      specs.forEach((spec, k) => {
+        const { beats, full } = spec.run;
+        const end = beats[beats.length - 1];
+        const xDomain: [number, number] = view === 'all' ? [0, end] : [full[0][0] - 0.4, full[0][0] + full[0][1] + 0.4];
+        const box = { x: 52, y: 6 + k * 150, w: width - 62, h: 116 };
+        const { x, y } = panel(ctx, box, xDomain, [0, longest * 1e3 * 1.1], spec.title);
+        const clipX = (v: number) => Math.min(box.x + box.w, Math.max(box.x, x(v)));
+
+        ctx.fillStyle = '#e05a47';
+        full.forEach(([s0, d], j) => {
+          if (s0 + d < xDomain[0] || s0 > xDomain[1]) return;
+          const x0 = clipX(s0);
+          const x1 = Math.max(x0 + 3, clipX(s0 + d));
+          ctx.globalAlpha = 0.18;
+          ctx.fillRect(x0, box.y, x1 - x0, box.h);
+          ctx.globalAlpha = 1;
+          ctx.font = `11px ${t.mono}`;
+          ctx.textAlign = 'right';
+          ctx.textBaseline = 'top';
+          ctx.fillText(`${j ? '' : 'full pass '}${Math.round(d * 1e3)} ms`, x0 - 4, box.y + 18);
+        });
+
+        ctx.strokeStyle = t.accent;
+        ctx.fillStyle = t.accent;
+        ctx.lineWidth = 2.2;
+        ctx.beginPath();
+        let started = false;
+        for (let i = 1; i < beats.length; i++) {
+          if (beats[i] < xDomain[0] || beats[i - 1] > xDomain[1]) continue;
+          const py = y((beats[i] - beats[i - 1]) * 1e3);
+          if (started) ctx.lineTo(clipX(beats[i - 1]), py);
+          else ctx.moveTo(clipX(beats[i - 1]), py);
+          ctx.lineTo(clipX(beats[i]), py);
+          started = true;
+        }
+        ctx.stroke();
+        if (view === 'zoom') {
+          for (const b of beats) {
+            if (b < xDomain[0] || b > xDomain[1]) continue;
+            ctx.beginPath();
+            ctx.arc(x(b), box.y + box.h, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+
+        ctx.fillStyle = t.muted;
+        ctx.font = `11px ${t.mono}`;
+        ctx.textBaseline = 'top';
+        ctx.textAlign = 'left';
+        ctx.fillText(`${xDomain[0].toFixed(view === 'all' ? 0 : 1)} s`, box.x, box.y + box.h + 6);
+        ctx.textAlign = 'right';
+        ctx.fillText(`${xDomain[1].toFixed(view === 'all' ? 0 : 1)} s`, box.x + box.w, box.y + box.h + 6);
+      });
+      ctx.save();
+      ctx.translate(12, 150);
+      ctx.rotate(-Math.PI / 2);
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = t.muted;
+      ctx.fillText('gap between heartbeats [ms]', 0, 0);
+      ctx.restore();
+
+      const gap = (r: Run) => Math.round(Math.max(...r.beats.slice(1).map((b, i) => b - r.beats[i])) * 1e3);
+      setStatus(
+        status,
+        `longest gap: ${gap(runs.plain)} ms without the freeze, ${gap(runs.frozen)} ms with it · full passes: ${runs.plain.full.length} and ${runs.frozen.full.length} · smaller collections: ${runs.plain.young.toLocaleString()} and ${runs.frozen.young.toLocaleString()}`,
+      );
+    };
+
+    for (const b of buttons)
+      b.addEventListener('click', () => {
+        view = b.dataset.view!;
+        for (const o of buttons) o.setAttribute('aria-pressed', String(o === b));
+        draw();
+      });
+    redrawOn(canvas, draw);
+  }
+</script>

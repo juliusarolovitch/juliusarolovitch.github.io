@@ -1,0 +1,49 @@
+---
+import '../styles/global.css';
+import { site } from '../site';
+
+interface Props {
+  title?: string;
+  description?: string;
+  wide?: boolean;
+}
+
+const { description = `${site.name}: projects and notes.`, wide = false } = Astro.props;
+const path = Astro.url.pathname;
+const nav = [
+  { href: '/', label: 'Home' },
+  { href: '/notes/', label: 'Notes' },
+  { href: '/projects/', label: 'Projects' },
+  { href: '/travel/', label: 'Travel' },
+  { href: '/books/', label: 'Books' },
+];
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={description} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=blank-2" />
+    <title>Julius' Portfolio</title>
+  </head>
+  <body class:list={[wide && 'wide']}>
+    <header class="site-header">
+      <a class="wordmark" href="/">{site.name}</a>
+      <nav>
+        {
+          nav.map(({ href, label }) => (
+            <a href={href} aria-current={(href === '/' ? path === '/' : path.startsWith(href.slice(0, -1))) ? 'page' : undefined}>
+              {label}
+            </a>
+          ))
+        }
+      </nav>
+    </header>
+    <main>
+      <slot />
+    </main>
+    <footer class="site-footer">© {new Date().getFullYear()} {site.name}</footer>
+  </body>
+</html>

@@ -1,0 +1,153 @@
+---
+import katex from 'katex';
+
+const tex = (s: string) => katex.renderToString(s);
+---
+
+<figure class="viz" data-gil>
+  <div class="viz-controls">
+    <label><Fragment set:html={tex(String.raw`t_{\text{CPU}}`)} /> <input type="range" min="10" max="200" step="5" value="70" data-work /><output data-work-out></output></label>
+    <label><Fragment set:html={tex('p')} /> <input type="range" min="0.1" max="1" step="0.05" value="1" data-share /><output data-share-out></output></label>
+  </div>
+  <canvas data-canvas role="img" aria-label="Timeline of four threads sharing the GIL while one of them runs a full collection"></canvas>
+  <p class="viz-status" data-status></p>
+</figure>
+
+<script>
+  import { scaleLinear } from 'd3-scale';
+  import { fitCanvas, redrawOn, setStatus, theme } from '../../lib/viz';
+
+  const span = 700;
+  const start = 120;
+  const slice = 5;
+  const beat = 50;
+  const lanes = ['thread 1 (collects)', 'thread 2 (heartbeat)', 'thread 3', 'thread 4'];
+
+  for (const root of document.querySelectorAll<HTMLElement>('[data-gil]')) {
+    const canvas = root.querySelector<HTMLCanvasElement>('[data-canvas]')!;
+    const status = root.querySelector<HTMLElement>('[data-status]')!;
+    const workIn = root.querySelector<HTMLInputElement>('[data-work]')!;
+    const shareIn = root.querySelector<HTMLInputElement>('[data-share]')!;
+
+    const draw = () => {
+      const t = theme();
+      const work = Number(workIn.value);
+      const p = Number(shareIn.value);
+      const wall = work / p;
+      const end = start + wall;
+      root.querySelector<HTMLOutputElement>('[data-work-out]')!.value = `${work} ms`;
+      root.querySelector<HTMLOutputElement>('[data-share-out]')!.value = `${Math.round(p * 100)}%`;
+
+      const { ctx, width } = fitCanvas(canvas, 200);
+      const x = scaleLinear().domain([0, span]).range([170, width - 28]);
+      const laneY = (i: number) => 24 + i * 40;
+      const bar = 18;
+
+      ctx.font = `12px ${t.mono}`;
+      ctx.textBaseline = 'middle';
+      lanes.forEach((name, i) => {
+        ctx.fillStyle = t.muted;
+        ctx.textAlign = 'left';
+        ctx.fillText(name, 4, laneY(i));
+        ctx.fillStyle = t.line;
+        ctx.fillRect(x(0), laneY(i) - bar / 2, x(span) - x(0), bar);
+      });
+
+      const hatch = (x0: number, x1: number, y: number, color: string) => {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x0, y - bar / 2, x1 - x0, bar);
+        ctx.clip();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.2;
+        for (let k = x0 - bar; k < x1 + bar; k += 6) {
+          ctx.beginPath();
+          ctx.moveTo(k, y + bar / 2);
+          ctx.lineTo(k + bar, y - bar / 2);
+          ctx.stroke();
+        }
+        ctx.restore();
+      };
+
+      let owner = 0;
+      for (let s0 = 0; s0 < span; s0 += slice) {
+        if (s0 + slice > start && s0 < end) continue;
+        const lane = [0, 2, 3][owner % 3];
+        owner++;
+        ctx.fillStyle = t.accent;
+        ctx.globalAlpha = 0.55;
+        ctx.fillRect(x(s0) + 0.5, laneY(lane) - bar / 2, x(s0 + slice) - x(s0) - 1, bar);
+        ctx.globalAlpha = 1;
+      }
+
+      ctx.fillStyle = '#e05a47';
+      ctx.globalAlpha = 0.85;
+      const chunk = 10;
+      for (let c = start; c < end; c += chunk / p) {
+        const run = Math.min(chunk, (end - c) * p);
+        ctx.fillRect(x(c), laneY(0) - bar / 2, x(c + run) - x(c), bar);
+      }
+      ctx.globalAlpha = 1;
+      for (let c = start; c < end; c += chunk / p) {
+        const a = c + chunk;
+        const b = Math.min(end, c + chunk / p);
+        if (b > a) hatch(x(a), x(b), laneY(0), '#e05a47');
+      }
+      ctx.strokeStyle = '#e05a47';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x(start), laneY(0) - bar / 2, x(end) - x(start), bar);
+      ctx.lineWidth = 1;
+      for (const lane of [1, 2, 3]) hatch(x(start), x(Math.min(end, span)), laneY(lane), t.muted);
+
+      let missed = 0;
+      const fired: number[] = [];
+      for (let b = 0; b < span; b += beat) {
+        const blocked = b >= start && b < end;
+        if (blocked) missed++;
+        fired.push(blocked ? end : b);
+      }
+      const times = [...new Set(fired)].sort((a, b) => a - b);
+      const gap = Math.max(...times.slice(1).map((v, i) => v - times[i]));
+      for (let b = 0; b < span; b += beat) {
+        const blocked = b >= start && b < end;
+        const cx = x(b);
+        const cy = laneY(1);
+        ctx.beginPath();
+        ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+        if (blocked) {
+          ctx.strokeStyle = t.fg;
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        } else {
+          ctx.fillStyle = t.fg;
+          ctx.fill();
+        }
+      }
+      if (end < span) {
+        ctx.fillStyle = t.fg;
+        ctx.beginPath();
+        ctx.moveTo(x(end), laneY(1) - 7);
+        ctx.lineTo(x(end) + 6, laneY(1));
+        ctx.lineTo(x(end), laneY(1) + 7);
+        ctx.fill();
+      }
+
+      ctx.fillStyle = t.muted;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      for (let v = 0; v <= span; v += 100) ctx.fillText(`${v} ms`, x(v), laneY(3) + 18);
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#e05a47';
+      ctx.fillText('full pass: one C call, GIL held throughout', x(start), laneY(0) - bar / 2 - 15);
+
+      setStatus(
+        status,
+        `$t_{\\text{wall}} = t_{\\text{CPU}} / p = ${work} / ${p.toFixed(2)} = ${wall.toFixed(0)}\\,\\text{ms}$ · heartbeats missed: ${missed} · longest heartbeat gap $\\approx ${Math.round(gap)}\\,\\text{ms}$`,
+      );
+    };
+
+    workIn.addEventListener('input', draw);
+    shareIn.addEventListener('input', draw);
+    redrawOn(canvas, draw);
+  }
+</script>

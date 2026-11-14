@@ -1,0 +1,162 @@
+---
+import { getCollection } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import { byOrder, topicLabel, topicOf } from '../../lib/notes';
+
+const notes = await getCollection('notes', (n) => !n.data.draft);
+const groups = new Map<string, typeof notes>();
+for (const n of notes) groups.set(topicOf(n), [...(groups.get(topicOf(n)) ?? []), n]);
+const topics = [...groups.keys()].sort();
+---
+
+<Base title="Notes">
+  <header class="page-head">
+    <h1>Notes</h1>
+    <p>Welcome to my notes. They’re handwritten, opinionated, sometimes incomplete, and come with visuals I built and found useful. I hope you find them as useful as I do :) More notes are on the way!</p>
+  </header>
+
+  <div class="tools">
+    <input type="search" placeholder="Filter notes…" aria-label="Filter notes" data-filter />
+    <nav class="chips">
+      {topics.map((t) => <a href={`#${t}`}>{topicLabel(t)}</a>)}
+    </nav>
+  </div>
+
+  {
+    topics.map((t, i) => (
+      <section class="topic" id={t} data-topic>
+        <h2>
+          <span class="num">{i + 1}</span>
+          {topicLabel(t)}
+        </h2>
+        <ol class="toc">
+          {groups
+            .get(t)!
+            .sort(byOrder)
+            .map((n, j) => (
+              <li data-text={`${n.data.title} ${n.data.description ?? ''} ${topicLabel(t)}`.toLowerCase()}>
+                <span class="num">
+                  {i + 1}.{j + 1}
+                </span>
+                <div>
+                  <a href={`/notes/${n.id}/`}>{n.data.title}</a>
+                  {n.data.description && <p>{n.data.description}</p>}
+                </div>
+              </li>
+            ))}
+        </ol>
+      </section>
+    ))
+  }
+  <p class="empty" hidden data-empty>No notes match.</p>
+</Base>
+
+<script>
+  const input = document.querySelector<HTMLInputElement>('[data-filter]');
+  const empty = document.querySelector<HTMLElement>('[data-empty]');
+  input?.addEventListener('input', () => {
+    const q = input.value.trim().toLowerCase();
+    let shown = 0;
+    for (const section of document.querySelectorAll<HTMLElement>('[data-topic]')) {
+      let hits = 0;
+      for (const li of section.querySelectorAll<HTMLElement>('li[data-text]')) {
+        li.hidden = !li.dataset.text!.includes(q);
+        if (!li.hidden) hits++;
+      }
+      section.hidden = hits === 0;
+      shown += hits;
+    }
+    if (empty) empty.hidden = shown > 0;
+  });
+</script>
+
+<style>
+  .tools {
+    margin: 1.75rem 0 0.5rem;
+    display: grid;
+    gap: 0.9rem;
+  }
+
+  input {
+    width: 100%;
+    padding: 0.6rem 0.8rem;
+    font: inherit;
+    color: var(--fg);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+  }
+
+  input:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .chips a {
+    font-size: 0.85rem;
+    padding: 0.2rem 0.7rem;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    color: var(--fg);
+  }
+
+  .chips a:hover {
+    border-color: var(--accent);
+    text-decoration: none;
+  }
+
+  .topic h2 {
+    display: flex;
+    align-items: baseline;
+    gap: 0.8rem;
+    margin: 2.75rem 0 0.75rem;
+    font-size: 1.45rem;
+  }
+
+  .num {
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    font-weight: 400;
+    color: var(--accent);
+    min-width: 2.2rem;
+  }
+
+  .toc {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .toc li {
+    display: flex;
+    gap: 0.8rem;
+    padding: 0.55rem 0;
+    border-top: 1px solid var(--line);
+  }
+
+  .toc li .num {
+    padding-top: 0.25rem;
+  }
+
+  .toc a {
+    color: var(--fg);
+    font-weight: 500;
+  }
+
+  .toc p {
+    margin: 0.1rem 0 0;
+    font-size: 0.92rem;
+    color: var(--muted);
+  }
+
+  .empty {
+    color: var(--muted);
+    margin-top: 2rem;
+  }
+</style>

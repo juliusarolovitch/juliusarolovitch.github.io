@@ -1,0 +1,244 @@
+<figure class="viz" data-modesplit>
+  <div class="viz-controls">
+    <div class="viz-seg" role="group" aria-label="Initial state">
+      <button type="button" data-preset="2,0" aria-pressed="true">left arm only</button>
+      <button type="button" data-preset="1,1" aria-pressed="false">pure heave</button>
+      <button type="button" data-preset="1,-1" aria-pressed="false">pure roll</button>
+    </div>
+    <div class="viz-seg"><button type="button" data-play aria-pressed="false">replay</button></div>
+  </div>
+  <div class="split-grid">
+    <canvas data-plane role="img" aria-label="The state plane of the two arm speeds, with the heave and roll directions" style="cursor: grab; touch-action: none"></canvas>
+    <canvas data-side role="img" aria-label="The bicopter flying the motion, and the size of each mode over time"></canvas>
+  </div>
+  <p class="viz-status" data-status></p>
+</figure>
+
+<style>
+  .split-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+
+  @media (max-width: 640px) {
+    .split-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<script>
+  import { scaleLinear } from 'd3-scale';
+  import { drawBicopter, fitCanvas, panel, redrawOn, setStatus, theme } from '../../lib/viz';
+
+  const span = 4;
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  for (const root of document.querySelectorAll<HTMLElement>('[data-modesplit]')) {
+    const plane = root.querySelector<HTMLCanvasElement>('[data-plane]')!;
+    const side = root.querySelector<HTMLCanvasElement>('[data-side]')!;
+    const status = root.querySelector<HTMLElement>('[data-status]')!;
+    let x0 = [2, 0];
+    let now = reduced ? span : 0;
+    let visible = false;
+    let dragging = false;
+
+    const planeScales = () => {
+      const width = plane.clientWidth;
+      const size = Math.min(width, 300);
+      return {
+        size,
+        sx: scaleLinear().domain([-2.4, 2.4]).range([width / 2 - size / 2 + 8, width / 2 + size / 2 - 8]),
+        sy: scaleLinear().domain([-2.4, 2.4]).range([size - 8, 8]),
+      };
+    };
+
+    const arrow = (ctx: CanvasRenderingContext2D, a: number[], b: number[]) => {
+      const ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      ctx.beginPath();
+      ctx.moveTo(a[0], a[1]);
+      ctx.lineTo(b[0], b[1]);
+      ctx.stroke();
+      if (len < 8) return;
+      ctx.beginPath();
+      ctx.moveTo(b[0], b[1]);
+      ctx.lineTo(b[0] - 10 * Math.cos(ang - 0.4), b[1] - 10 * Math.sin(ang - 0.4));
+      ctx.lineTo(b[0] - 10 * Math.cos(ang + 0.4), b[1] - 10 * Math.sin(ang + 0.4));
+      ctx.fill();
+    };
+
+    const draw = () => {
+      const t = theme();
+      const tc = Math.min(now, span);
+      const cs = (x0[0] + x0[1]) / 2;
+      const cf = (x0[0] - x0[1]) / 2;
+      const state = (s: number) => [cs * Math.exp(-s) + cf * Math.exp(-3 * s), cs * Math.exp(-s) - cf * Math.exp(-3 * s)];
+
+      {
+        const { size, sx, sy } = planeScales();
+        const { ctx } = fitCanvas(plane, size);
+        const P = (p: number[]) => [sx(p[0]), sy(p[1])];
+        ctx.strokeStyle = t.muted;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(sx(-2.4), sy(0));
+        ctx.lineTo(sx(2.4), sy(0));
+        ctx.moveTo(sx(0), sy(-2.4));
+        ctx.lineTo(sx(0), sy(2.4));
+        ctx.stroke();
+        ctx.setLineDash([2, 5]);
+        ctx.strokeStyle = t.fg;
+        ctx.globalAlpha = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(...(P([-2.4, -2.4]) as [number, number]));
+        ctx.lineTo(...(P([2.4, 2.4]) as [number, number]));
+        ctx.stroke();
+        ctx.strokeStyle = t.accent;
+        ctx.beginPath();
+        ctx.moveTo(...(P([-2.4, 2.4]) as [number, number]));
+        ctx.lineTo(...(P([2.4, -2.4]) as [number, number]));
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.globalAlpha = 1;
+        ctx.font = `11px ${t.mono}`;
+        ctx.fillStyle = t.muted;
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText('left arm', sx(2.4), sy(0) - 3);
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.fillText('right arm', sx(0) + 5, sy(2.4));
+        ctx.fillStyle = t.fg;
+        ctx.fillText('heave', sx(1.75) + 4, sy(2.05));
+        ctx.fillStyle = t.accent;
+        ctx.fillText('roll', sx(1.85) + 4, sy(-1.7));
+
+        const o = P([0, 0]);
+        ctx.setLineDash([4, 4]);
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = t.muted;
+        ctx.beginPath();
+        ctx.moveTo(...(P([cs, cs]) as [number, number]));
+        ctx.lineTo(...(P(x0) as [number, number]));
+        ctx.lineTo(...(P([cf, -cf]) as [number, number]));
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.lineWidth = 2.4;
+        ctx.strokeStyle = t.fg;
+        ctx.fillStyle = t.fg;
+        arrow(ctx, o, P([cs * Math.exp(-tc), cs * Math.exp(-tc)]));
+        ctx.strokeStyle = t.accent;
+        ctx.fillStyle = t.accent;
+        arrow(ctx, o, P([cf * Math.exp(-3 * tc), -cf * Math.exp(-3 * tc)]));
+
+        ctx.strokeStyle = t.accent;
+        ctx.lineWidth = 2.6;
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        const n = Math.round((tc / span) * 200);
+        for (let k = 0; k <= n; k++) {
+          const p = P(state((k / 200) * span));
+          if (k) ctx.lineTo(p[0], p[1]);
+          else ctx.moveTo(p[0], p[1]);
+        }
+        ctx.stroke();
+        ctx.fillStyle = t.fg;
+        const start = P(x0);
+        ctx.beginPath();
+        ctx.arc(start[0], start[1], 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = t.accent;
+        const cur = P(state(tc));
+        ctx.beginPath();
+        ctx.arc(cur[0], cur[1], 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      {
+        const { ctx, width } = fitCanvas(side, planeScales().size);
+        const h = planeScales().size;
+        const hl = cs * (1 - Math.exp(-tc)) + (cf * (1 - Math.exp(-3 * tc))) / 3;
+        const hr = cs * (1 - Math.exp(-tc)) - (cf * (1 - Math.exp(-3 * tc))) / 3;
+        const half = Math.min(70, width / 2 - 34);
+        const scale = 16;
+        const cy = 72 - (scale * (hl + hr)) / 2;
+        drawBicopter(ctx, width / 2, cy, half, Math.atan2(scale * (hr - hl), 2 * half), now * 40);
+        const box = { x: 40, y: 128, w: width - 50, h: h - 152 };
+        const peak = Math.max(1e-6, Math.abs(cs), Math.abs(cf));
+        const { x, y } = panel(ctx, box, [0, span], [-peak, peak], 'size of each mode');
+        const n = Math.round((tc / span) * 200);
+        for (const [c, rate, color] of [
+          [cs, 1, t.fg],
+          [cf, 3, t.accent],
+        ] as const) {
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 2.4;
+          ctx.beginPath();
+          for (let k = 0; k <= n; k++) {
+            const s = (k / 200) * span;
+            if (k) ctx.lineTo(x(s), y(c * Math.exp(-rate * s)));
+            else ctx.moveTo(x(s), y(c * Math.exp(-rate * s)));
+          }
+          ctx.stroke();
+        }
+        ctx.font = `11px ${t.mono}`;
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'top';
+        ctx.fillStyle = t.fg;
+        ctx.fillText('heave mode', box.x + box.w - 4, box.y + 4);
+        ctx.fillStyle = t.accent;
+        ctx.fillText('roll mode', box.x + box.w - 4, box.y + 19);
+      }
+
+      const f = (v: number) => v.toFixed(2);
+      setStatus(status, `$\\mathbf{x}(0) = [${f(x0[0])}, ${f(x0[1])}] = ${f(cs)} \\cdot \\text{heave} ${cf < 0 ? '-' : '+'} ${f(Math.abs(cf))} \\cdot \\text{roll}$   $t = ${tc.toFixed(2)}\\,\\text{s}$`);
+    };
+
+    const setFromPointer = (e: PointerEvent) => {
+      const r = plane.getBoundingClientRect();
+      const { sx, sy } = planeScales();
+      x0 = [Math.max(-2.2, Math.min(2.2, sx.invert(e.clientX - r.left))), Math.max(-2.2, Math.min(2.2, sy.invert(e.clientY - r.top)))];
+      now = reduced ? span : 0;
+      root.querySelectorAll('[data-preset]').forEach((o) => o.setAttribute('aria-pressed', 'false'));
+      draw();
+    };
+
+    plane.addEventListener('pointerdown', (e) => {
+      dragging = true;
+      plane.setPointerCapture(e.pointerId);
+      setFromPointer(e);
+    });
+    plane.addEventListener('pointermove', (e) => dragging && setFromPointer(e));
+    plane.addEventListener('pointerup', () => (dragging = false));
+    for (const b of root.querySelectorAll<HTMLButtonElement>('[data-preset]')) {
+      b.addEventListener('click', () => {
+        x0 = b.dataset.preset!.split(',').map(Number);
+        now = reduced ? span : 0;
+        root.querySelectorAll('[data-preset]').forEach((o) => o.setAttribute('aria-pressed', String(o === b)));
+        draw();
+      });
+    }
+    root.querySelector('[data-play]')!.addEventListener('click', () => {
+      now = 0;
+      draw();
+    });
+    redrawOn(plane, draw);
+
+    if (!reduced) {
+      new IntersectionObserver(([e]) => (visible = e.isIntersecting)).observe(plane);
+      let last = performance.now();
+      const loop = (stamp: number) => {
+        const dt = Math.min(0.05, (stamp - last) / 1000);
+        last = stamp;
+        if (visible && now < span + 0.5) {
+          now += dt;
+          draw();
+        }
+        requestAnimationFrame(loop);
+      };
+      requestAnimationFrame(loop);
+    }
+  }
+</script>

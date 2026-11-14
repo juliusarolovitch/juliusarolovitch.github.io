@@ -1,0 +1,187 @@
+---
+import katex from 'katex';
+
+const tex = (s: string) => katex.renderToString(s);
+---
+
+<figure class="viz" data-poles>
+  <div class="viz-controls">
+    <label><Fragment set:html={tex('c')} /> <input type="range" min="-1" max="6" step="0.05" value="1" data-c /><output data-c-out></output></label>
+    <label><Fragment set:html={tex('k')} /> <input type="range" min="0.25" max="9" step="0.05" value="4" data-k /><output data-k-out></output></label>
+  </div>
+  <div class="pole-grid">
+    <canvas data-plane role="img" aria-label="Poles of the mass-spring-damper in the complex plane"></canvas>
+    <canvas data-resp role="img" aria-label="Free response of the mass-spring-damper released from x = 1"></canvas>
+  </div>
+  <p class="viz-status" data-status></p>
+</figure>
+
+<style>
+  .pole-grid {
+    display: grid;
+    grid-template-columns: 1fr 1.35fr;
+    gap: 1rem;
+  }
+
+  @media (max-width: 640px) {
+    .pole-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<script>
+  import { scaleLinear } from 'd3-scale';
+  import { line } from 'd3-shape';
+  import { fitCanvas, panel, redrawOn, setStatus, theme } from '../../lib/viz';
+
+  for (const root of document.querySelectorAll<HTMLElement>('[data-poles]')) {
+    const plane = root.querySelector<HTMLCanvasElement>('[data-plane]')!;
+    const resp = root.querySelector<HTMLCanvasElement>('[data-resp]')!;
+    const status = root.querySelector<HTMLElement>('[data-status]')!;
+    const cIn = root.querySelector<HTMLInputElement>('[data-c]')!;
+    const kIn = root.querySelector<HTMLInputElement>('[data-k]')!;
+
+    const draw = () => {
+      const t = theme();
+      const c = Number(cIn.value);
+      const k = Number(kIn.value);
+      root.querySelector<HTMLOutputElement>('[data-c-out]')!.value = c.toFixed(2);
+      root.querySelector<HTMLOutputElement>('[data-k-out]')!.value = k.toFixed(2);
+      const disc = c * c - 4 * k;
+      const repeated = Math.abs(disc) < 1e-6;
+      const poles: number[][] = repeated
+        ? [[-c / 2, 0]]
+        : disc > 0
+          ? [
+              [(-c + Math.sqrt(disc)) / 2, 0],
+              [(-c - Math.sqrt(disc)) / 2, 0],
+            ]
+          : [
+              [-c / 2, Math.sqrt(-disc) / 2],
+              [-c / 2, -Math.sqrt(-disc) / 2],
+            ];
+
+      {
+        const { ctx, width } = fitCanvas(plane, 250);
+        const sx = scaleLinear().domain([-6.5, 1.5]).range([10, width - 10]);
+        const sy = scaleLinear().domain([-3.6, 3.6]).range([240, 10]);
+        ctx.fillStyle = t.accent;
+        ctx.globalAlpha = 0.08;
+        ctx.fillRect(sx(0), sy(3.6), sx(1.5) - sx(0), sy(-3.6) - sy(3.6));
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = t.line;
+        ctx.lineWidth = 1;
+        for (let g = -6; g <= 1; g++) {
+          ctx.beginPath();
+          ctx.moveTo(sx(g), sy(-3.6));
+          ctx.lineTo(sx(g), sy(3.6));
+          ctx.stroke();
+        }
+        for (let g = -3; g <= 3; g++) {
+          ctx.beginPath();
+          ctx.moveTo(sx(-6.5), sy(g));
+          ctx.lineTo(sx(1.5), sy(g));
+          ctx.stroke();
+        }
+        ctx.strokeStyle = t.muted;
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.moveTo(sx(-6.5), sy(0));
+        ctx.lineTo(sx(1.5), sy(0));
+        ctx.moveTo(sx(0), sy(-3.6));
+        ctx.lineTo(sx(0), sy(3.6));
+        ctx.stroke();
+        ctx.fillStyle = t.muted;
+        ctx.font = `11px ${t.mono}`;
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText('Re', width - 12, sy(0) - 3);
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.fillText('Im', sx(0) + 5, 12);
+        ctx.textAlign = 'right';
+        ctx.fillText('grows', width - 12, sy(-3.6) - 16);
+        ctx.textAlign = 'left';
+        ctx.fillText('decays', 14, sy(-3.6) - 16);
+        ctx.strokeStyle = t.accent;
+        ctx.lineWidth = 2.6;
+        ctx.lineCap = 'round';
+        for (const [re, im] of poles) {
+          const px = sx(re);
+          const py = sy(Math.max(-3.5, Math.min(3.5, im)));
+          ctx.beginPath();
+          ctx.moveTo(px - 7, py - 7);
+          ctx.lineTo(px + 7, py + 7);
+          ctx.moveTo(px - 7, py + 7);
+          ctx.lineTo(px + 7, py - 7);
+          ctx.stroke();
+        }
+        if (repeated) {
+          ctx.fillStyle = t.accent;
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'bottom';
+          ctx.fillText('×2', sx(poles[0][0]) + 9, sy(0) - 8);
+        }
+      }
+
+      {
+        const { ctx, width } = fitCanvas(resp, 250);
+        const box = { x: 40, y: 8, w: width - 50, h: 210 };
+        const { x, y } = panel(ctx, box, [0, 10], [-2, 2], 'free response from x = 1');
+        const pts: [number, number][] = [];
+        let s = [1, 0];
+        const f = (v: number[]) => [v[1], -k * v[0] - c * v[1]];
+        const dt = 0.01;
+        for (let i = 0; i <= 1000; i++) {
+          pts.push([i * dt, s[0]]);
+          const k1 = f(s);
+          const k2 = f([s[0] + (dt / 2) * k1[0], s[1] + (dt / 2) * k1[1]]);
+          const k3 = f([s[0] + (dt / 2) * k2[0], s[1] + (dt / 2) * k2[1]]);
+          const k4 = f([s[0] + dt * k3[0], s[1] + dt * k3[1]]);
+          s = [s[0] + (dt / 6) * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]), s[1] + (dt / 6) * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1])];
+        }
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(box.x, box.y, box.w, box.h);
+        ctx.clip();
+        ctx.strokeStyle = t.accent;
+        ctx.lineWidth = 2.4;
+        ctx.beginPath();
+        line<[number, number]>()
+          .x((d) => x(d[0]))
+          .y((d) => y(Math.max(-3, Math.min(3, d[1]))))
+          .context(ctx)(pts);
+        ctx.stroke();
+        ctx.restore();
+        ctx.fillStyle = t.muted;
+        ctx.font = `11px ${t.mono}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        for (const s of [0, 2, 4, 6, 8, 10]) ctx.fillText(`${s} s`, x(s), box.y + box.h + 6);
+      }
+
+      const fmt = (v: number) => v.toFixed(2);
+      const where = repeated
+        ? `$s = ${fmt(poles[0][0])}$ (twice)`
+        : disc > 0
+          ? `$s = ${fmt(poles[0][0])}$ and $${fmt(poles[1][0])}$`
+          : `$s = ${fmt(poles[0][0])} \\pm ${poles[0][1].toFixed(2)}j$`;
+      const kind =
+        c < 0
+          ? 'negative damping, so the poles sit in the right half-plane and the motion grows'
+          : Math.abs(c) < 1e-9
+            ? 'no damping, so the poles sit on the imaginary axis and the motion oscillates forever'
+            : repeated
+              ? 'critically damped: a repeated real pole'
+              : disc > 0
+                ? 'overdamped: two real poles, no oscillation'
+                : 'underdamped: a complex pair, a decaying oscillation';
+      setStatus(status, `${where}. ${kind[0].toUpperCase()}${kind.slice(1)}. $\\zeta = ${(c / (2 * Math.sqrt(k))).toFixed(2)}$, $\\omega_n = ${Math.sqrt(k).toFixed(2)}\\,\\text{rad/s}$.`);
+    };
+
+    cIn.addEventListener('input', draw);
+    kIn.addEventListener('input', draw);
+    redrawOn(resp, draw);
+  }
+</script>

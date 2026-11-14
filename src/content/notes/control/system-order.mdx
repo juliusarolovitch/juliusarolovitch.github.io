@@ -1,0 +1,103 @@
+---
+title: System order
+updated: 2026-10-31
+order: 3
+draft: false
+---
+
+import TwoMasses from '../../../components/control/TwoMasses.astro';
+
+## Memory
+
+A dynamic system's future depends on both the future input and something about its present internal condition - we denote this concept **memory**. For example, one cannot instantaneously accelerate a car to $60\,\mathrm{mph}$ from a standstill; instead, achieving a speed of $60\,\mathrm{mph}$ requires the consistent application of force to accelerate the vehicle over time.
+
+Memory usually comes from storage. A room stores thermal energy, a capacitor stores charge, a spinning rotor stores momentum, a tank stores fluid, and a spring stores elastic energy.
+
+## State and order
+
+The **state** is the smallest collection of internal quantities that, together with future inputs, is sufficient to determine future behavior. The **order** of a minimal dynamic model is the number of independent state variables it needs.
+
+Consider a moving mass, an example we'll use as a simple warning against defining state purely as what we can see. Two photographs may show the mass at the same position, yet in one it is moving right and in the other left. Their futures differ because velocity is hidden by a still image.
+
+Below, masses $A$ and $B$ start at the same position $q = 0$, with $A$ moving right and $B$ moving left. Things to try:
+
+- With the state $\mathbf{x} = [q]$ selected, look at the two masses before pressing play. The two "photographs" are identical, and so are the two states. Now press play - the futures split immediately.
+- Switch to $\mathbf{x} = [q,\ v]$. The velocity is now part of the state, so the two masses were never in the same state to begin with.
+
+<TwoMasses />
+
+In many physical models, order is closely related to the number of independent energy-storage elements. This gives a practical way to reason about order: propose a collection of state variables and ask whether it contains exactly enough information to distinguish all possible futures. There are two ways to get this wrong. We can underspecify the state by omitting necessary memory, or overspecify it by including quantities that do not provide independent memory.
+
+## Underspecified states
+
+Returning to our mass, assume that it is an ideal frictionless mass moving along a line. We describe its position as $q$, its velocity as the first derivative of position $\dot q$, and its acceleration as the second derivative of position $\ddot q$. If the force applied to the mass is the input $u$, Newton's second law gives
+
+$$
+m\ddot q=u.
+$$
+
+Suppose we attempt to describe the state $\mathbf{x}$ using only position:
+
+$$
+\mathbf{x} = \begin{bmatrix} q \end{bmatrix}.
+$$
+
+This is an underspecified state. To visualize this, imagine two masses $A$ and $B$ at the same position at time $0$,
+
+$$
+q_A(0)=q_B(0)=0,
+$$
+
+but with different velocities,
+
+$$
+\dot q_A(0)=1, \qquad \dot q_B(0)=-1.
+$$
+
+Without applying any additional input to influence the motion of the blocks, their velocities will stay constant and integrate into position because the masses are frictionless. We can represent their respective positions at time $t$ as
+
+$$
+q_A(t)=t, \qquad q_B(t)=-t.
+$$
+
+Our proposed state says that the two systems are identical at $t=0$, yet they subsequently behave differently. We have discarded information that matters.
+
+Adding velocity fixes the ambiguity:
+
+$$
+\mathbf{x} = \begin{bmatrix} q\\ v \end{bmatrix}, \qquad v=\dot q.
+$$
+
+Given $q(0)$, $v(0)$, and all future values of $u(t)$, the future is now uniquely determined. The mass therefore has a minimal second-order model.
+
+## Overspecified states
+
+It may be tempting to continue adding derivatives:
+
+$$
+\mathbf{x} = \begin{bmatrix} q\\ v\\ a \end{bmatrix}.
+$$
+
+However, by Newton's second law, the force input $u$ applied to the block satisfies $u=ma=m\dot v$. Therefore, for this particular model,
+
+$$
+a=\dot v=\frac{u}{m}.
+$$
+
+Acceleration is determined immediately by the current input; it does not carry independent memory. We cannot freely choose $q(0)$, $v(0)$, and $a(0)$ while holding $u(0)$ fixed. The third variable therefore does not make the physical system third order.
+
+The same mistake can be made more obviously by defining
+
+$$
+\mathbf{x} = \begin{bmatrix} q\\ v\\ q^2 \end{bmatrix}.
+$$
+
+Although three numbers have been written down, the third is completely determined by the first. If the entries are denoted $x_1$, $x_2$, and $x_3$, then
+
+$$
+x_3=x_1^2.
+$$
+
+The system still contains only two independent pieces of information. Counting variables is therefore not enough - order is determined by independent dynamic memory sources.
+
+> **Is the proposed state sufficient and minimal?** Imagine two copies of the system with identical proposed states. From this instant onward, give them exactly the same inputs. If they can still evolve differently, some necessary state has been omitted. If one proposed state variable is always determined by the others and the current input, it is not an independent state.

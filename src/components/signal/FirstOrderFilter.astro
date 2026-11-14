@@ -1,0 +1,115 @@
+---
+import katex from 'katex';
+
+const tex = (s: string) => katex.renderToString(s);
+---
+
+<figure class="viz" data-filter>
+  <div class="viz-controls">
+    <div class="viz-seg" role="group" aria-label="Input signal">
+      <button type="button" data-input="step" aria-pressed="true">step</button>
+      <button type="button" data-input="noisy" aria-pressed="false">noisy step</button>
+      <button type="button" data-input="sine" aria-pressed="false">sine + noise</button>
+    </div>
+    <label><Fragment set:html={tex(String.raw`\alpha`)} /> <input type="range" min="-2.5" max="0" step="0.01" value="-1.4" data-alpha /><output data-alpha-out></output></label>
+  </div>
+  <canvas data-canvas role="img" aria-label="Input signal and first-order filter output over time"></canvas>
+  <p class="viz-status" data-status></p>
+</figure>
+
+<script>
+  import { line } from 'd3-shape';
+  import { fitCanvas, panel, redrawOn, setStatus, theme } from '../../lib/viz';
+
+  const dt = 0.01;
+  const n = 400;
+  const tStep = 0.5;
+  let seed = 7;
+  const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const noise = Array.from({ length: n }, () => Math.sqrt(-2 * Math.log(rand())) * Math.cos(2 * Math.PI * rand()) * 0.15);
+  const inputs: Record<string, number[]> = {
+    step: Array.from({ length: n }, (_, k) => (k * dt >= tStep ? 1 : 0)),
+    noisy: Array.from({ length: n }, (_, k) => (k * dt >= tStep ? 1 : 0) + noise[k]),
+    sine: Array.from({ length: n }, (_, k) => Math.sin(2 * Math.PI * 0.5 * k * dt) + noise[k]),
+  };
+
+  for (const root of document.querySelectorAll<HTMLElement>('[data-filter]')) {
+    const canvas = root.querySelector<HTMLCanvasElement>('[data-canvas]')!;
+    const slider = root.querySelector<HTMLInputElement>('[data-alpha]')!;
+    const status = root.querySelector<HTMLElement>('[data-status]')!;
+    let mode = 'step';
+
+    const draw = () => {
+      const alpha = 10 ** Number(slider.value);
+      const tau = alpha >= 1 ? 0 : -dt / Math.log(1 - alpha);
+      root.querySelector<HTMLOutputElement>('[data-alpha-out]')!.value = alpha.toFixed(3);
+      const u = inputs[mode];
+      const y: number[] = [];
+      u.forEach((v, k) => y.push((1 - alpha) * (k ? y[k - 1] : 0) + alpha * v));
+
+      const t = theme();
+      const { ctx, width } = fitCanvas(canvas, 250);
+      const box = { x: 40, y: 8, w: width - 50, h: 206 };
+      const { x, y: sy } = panel(ctx, box, [0, n * dt], mode === 'sine' ? [-1.6, 1.6] : [-0.4, 1.4], '');
+      const series = (v: number[]) =>
+        line<number>()
+          .x((_, k) => x(k * dt))
+          .y((d) => sy(d))
+          .context(ctx)(v);
+
+      if (!(mode === 'sine') && tStep + tau < n * dt) {
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = t.muted;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(box.x, sy(1 - Math.exp(-1)));
+        ctx.lineTo(x(tStep + tau), sy(1 - Math.exp(-1)));
+        ctx.lineTo(x(tStep + tau), box.y + box.h);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = t.muted;
+        ctx.font = `11px ${t.mono}`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText('63% at t = τ', x(tStep + tau) + 6, sy(1 - Math.exp(-1)) - 4);
+      }
+
+      ctx.strokeStyle = t.muted;
+      ctx.globalAlpha = 0.7;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      series(u);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = t.accent;
+      ctx.lineWidth = 2.6;
+      ctx.beginPath();
+      series(y);
+      ctx.stroke();
+
+      ctx.font = `11px ${t.mono}`;
+      ctx.fillStyle = t.muted;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      for (const s of [0, 1, 2, 3, 4]) ctx.fillText(`${s} s`, x(s), box.y + box.h + 8);
+      ctx.textAlign = 'right';
+      ctx.fillStyle = t.muted;
+      ctx.fillText('input', box.x + box.w - 70, box.y + 4);
+      ctx.fillStyle = t.accent;
+      ctx.fillText('output', box.x + box.w - 6, box.y + 4);
+
+      const tauTex = tau < 0.01 ? `${(tau * 1000).toFixed(1)}\\,\\text{ms}` : `${tau.toFixed(2)}\\,\\text{s}`;
+      setStatus(status, `$\\alpha = ${alpha.toFixed(3)}$ ↔ $\\tau = ${tauTex}$ at $\\Delta t = 10\\,\\text{ms}$`);
+    };
+
+    for (const b of root.querySelectorAll<HTMLButtonElement>('[data-input]')) {
+      b.addEventListener('click', () => {
+        mode = b.dataset.input!;
+        root.querySelectorAll('[data-input]').forEach((o) => o.setAttribute('aria-pressed', String(o === b)));
+        draw();
+      });
+    }
+    slider.addEventListener('input', draw);
+    redrawOn(canvas, draw);
+  }
+</script>

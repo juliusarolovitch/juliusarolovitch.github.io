@@ -1,0 +1,221 @@
+---
+import { getCollection } from 'astro:content';
+import Base from '../layouts/Base.astro';
+import SlamField from '../components/SlamField.astro';
+import ProjectList from '../components/ProjectList.astro';
+import WorldMap from '../components/WorldMap.astro';
+import { site } from '../site';
+import { byOrder, topicOf, topicLabel } from '../lib/notes';
+
+const trips = (await getCollection('travel', (p) => !p.data.draft)).sort((a, b) => b.data.date.valueOf() - a.data.date.valueOf());
+
+const projects = (await getCollection('projects', (p) => p.data.featured)).sort((a, b) => b.data.year - a.data.year);
+const notes = await getCollection('notes', (n) => !n.data.draft);
+const groups = new Map<string, typeof notes>();
+for (const note of notes) groups.set(topicOf(note), [...(groups.get(topicOf(note)) ?? []), note]);
+const topics = [...groups.keys()].sort();
+const initials = site.name
+  .split(' ')
+  .map((w) => w[0])
+  .join('');
+---
+
+<Base>
+  <section class="hero">
+    <SlamField />
+    <div class="avatar rise">
+      {site.photo ? <img src={site.photo} alt={site.name} /> : <span>{initials}</span>}
+    </div>
+    <div>
+      <h1 class="rise" style="--i: 1">{site.name}</h1>
+      <p class="role rise" style="--i: 2">{site.role}</p>
+      <ul class="links rise" style="--i: 3">
+        {site.links.map((l) => <li><a href={l.href}>{l.label}</a></li>)}
+      </ul>
+    </div>
+  </section>
+
+  <section class="bio rise" style="--i: 3">
+    <p>
+      Hello! Welcome to my little corner of the internet. 
+    </p>
+    <p>
+      I'm a robotics engineer, and I like the problems that show up when robots leave the lab. I enjoy working across the robotics stack, from planning, controls, and estimation to the hardware and systems that tie everything together.
+    </p>
+    <p>
+      These days, I lead the guidance and control team at a stealth startup in the Bay Area. We build classical and learning-based controllers for autonomous flight, along with the software that makes them run reliably on actual aircraft.
+    </p>
+    <p>
+      Before that, I studied ECE and Robotics at Carnegie Mellon, where I also spent a good deal of time teaching. Along the way, I worked on robotic manipulation for Ottava at Johnson & Johnson, and at CMU’s Robotics Institute on snake robots for minimally invasive surgery, motion planning for manipulation, and decentralized multi-agent coordination.
+    </p>
+    <p>
+      I like learning things thoroughly, which often means writing them down. Most of my notes start as attempts to explain something to myself, and I figure they might be useful to someone else too.
+    </p>
+    <p>
+      Outside of engineering, I enjoy traveling, learning languages, and exploring unfamiliar places - often from behind the wheel of Matilda, my Miata. I occasionally write about my travels, too.
+    </p>
+  </section>
+
+  <h2 class="section-title">Notes</h2>
+  <div class="notes-grid">
+    {
+      topics.map((topic) => (
+        <section class="note-topic">
+          <h3><a href={`/notes/#${topic}`}>{topicLabel(topic)}</a></h3>
+          <ul class="topic-notes">
+            {groups.get(topic)!.sort(byOrder).map((note) => (
+              <li><a href={`/notes/${note.id}/`}>{note.data.title}</a></li>
+            ))}
+          </ul>
+        </section>
+      ))
+    }
+  </div>
+  <p class="more"><a href="/notes/">All notes →</a></p>
+
+  <h2 class="section-title">Selected projects</h2>
+  <ProjectList items={projects} />
+  <p class="more"><a href="/projects/">All projects →</a></p>
+
+  <h2 class="section-title">Travel</h2>
+  <WorldMap posts={trips} />
+  <ol class="recent trips">
+    {
+      trips.slice(0, 3).map((p) => (
+        <li>
+          <a href={`/travel/${p.id}/`}>{p.data.place}</a>
+          <time datetime={p.data.date.toISOString()}>
+            {p.data.date.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' })}
+          </time>
+        </li>
+      ))
+    }
+  </ol>
+  <p class="more"><a href="/travel/">{trips.length ? 'All travel posts →' : 'Explore the travel map →'}</a></p>
+</Base>
+
+<style>
+  .hero {
+    position: relative;
+    isolation: isolate;
+    display: flex;
+    align-items: center;
+    gap: 1.75rem;
+    padding: 3.5rem 0 2rem;
+  }
+
+  .avatar {
+    flex: none;
+    width: 7.5rem;
+    height: 7.5rem;
+    border-radius: 50%;
+    overflow: hidden;
+    display: grid;
+    place-items: center;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--bg) 70%, transparent);
+    font-family: var(--serif);
+    font-size: 2.4rem;
+    color: var(--accent);
+  }
+
+  .avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  h1 {
+    font-size: clamp(2rem, 6vw, 2.8rem);
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+
+  .role {
+    margin: 0.35rem 0 0.75rem;
+    color: var(--muted);
+  }
+
+  .links {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1.1rem;
+    font-family: var(--mono);
+    font-size: 0.85rem;
+  }
+
+  .trips {
+    margin-top: 1rem;
+  }
+
+  .bio {
+    font-size: 1.05rem;
+  }
+
+  .more {
+    margin: 1.5rem 0 0;
+    font-size: 0.95rem;
+  }
+
+  .notes-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2rem;
+  }
+
+  .note-topic h3 {
+    margin: 0 0 0.5rem;
+    font-size: 1.12rem;
+  }
+
+  .note-topic h3 a {
+    color: var(--fg);
+  }
+
+  .topic-notes,
+  .recent {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .topic-notes li,
+  .recent li {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.45rem 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .recent time {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--muted);
+    white-space: nowrap;
+    padding-top: 0.2rem;
+  }
+
+  @media (max-width: 560px) {
+    .hero {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 1.25rem;
+      padding-top: 2rem;
+    }
+
+    .avatar {
+      width: 5.5rem;
+      height: 5.5rem;
+      font-size: 1.8rem;
+    }
+
+    .notes-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

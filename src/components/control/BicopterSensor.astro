@@ -1,0 +1,153 @@
+<figure class="viz" data-bisensor>
+  <div class="viz-controls">
+    <div class="viz-seg"><button type="button" data-play aria-pressed="false">replay</button></div>
+  </div>
+  <canvas data-scene role="img" aria-label="Two bicopters: one starts with only its left arm rising, the other climbs level"></canvas>
+  <canvas data-plot role="img" aria-label="Arm speeds of the first bicopter and the center sensor readings of both"></canvas>
+  <p class="viz-status" data-status></p>
+</figure>
+
+<script>
+  import { drawBicopter, fitCanvas, panel, redrawOn, setStatus, theme } from '../../lib/viz';
+
+  const span = 4;
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const cases = [
+    { name: 'first: only the left arm rising', cs: 1, cf: 1 },
+    { name: 'second: both arms rising', cs: 1, cf: 0 },
+  ];
+  const speeds = (c: { cs: number; cf: number }, t: number) => [c.cs * Math.exp(-t) + c.cf * Math.exp(-3 * t), c.cs * Math.exp(-t) - c.cf * Math.exp(-3 * t)];
+  const heights = (c: { cs: number; cf: number }, t: number) => [
+    c.cs * (1 - Math.exp(-t)) + (c.cf * (1 - Math.exp(-3 * t))) / 3,
+    c.cs * (1 - Math.exp(-t)) - (c.cf * (1 - Math.exp(-3 * t))) / 3,
+  ];
+
+  for (const root of document.querySelectorAll<HTMLElement>('[data-bisensor]')) {
+    const scene = root.querySelector<HTMLCanvasElement>('[data-scene]')!;
+    const plot = root.querySelector<HTMLCanvasElement>('[data-plot]')!;
+    const status = root.querySelector<HTMLElement>('[data-status]')!;
+    let now = reduced ? span : 0;
+    let visible = false;
+
+    const draw = () => {
+      const t = theme();
+      const tc = Math.min(now, span);
+
+      {
+        const { ctx, width } = fitCanvas(scene, 190);
+        const scale = 52;
+        const ground = 160;
+        ctx.font = `11px ${t.mono}`;
+        cases.forEach((c, i) => {
+          const cx = (width / 4) * (1 + 2 * i);
+          const half = Math.min(70, width / 4 - 30);
+          const [hl, hr] = heights(c, tc);
+          const [vl, vr] = speeds(c, tc);
+          const cy = ground - scale * (hl + hr) / 2;
+          const angle = Math.atan2(scale * (hr - hl), 2 * half);
+          ctx.strokeStyle = t.line;
+          ctx.setLineDash([3, 4]);
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(cx - half - 20, ground);
+          ctx.lineTo(cx + half + 20, ground);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          drawBicopter(ctx, cx, cy, half, angle, now * 40);
+          ctx.strokeStyle = t.accent;
+          ctx.fillStyle = t.accent;
+          ctx.lineWidth = 2;
+          for (const [side, v] of [
+            [-1, vl],
+            [1, vr],
+          ]) {
+            const ax = cx + side * Math.cos(angle) * half;
+            const ay = cy - side * Math.sin(angle) * half + 16;
+            const len = v * 26;
+            if (Math.abs(len) < 2) continue;
+            ctx.beginPath();
+            ctx.moveTo(ax, ay);
+            ctx.lineTo(ax, ay - len);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(ax, ay - len - Math.sign(len) * 6);
+            ctx.lineTo(ax - 4, ay - len);
+            ctx.lineTo(ax + 4, ay - len);
+            ctx.fill();
+          }
+          ctx.fillStyle = t.muted;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'top';
+          ctx.fillText(c.name, cx, ground + 8);
+        });
+      }
+
+      {
+        const { ctx, width } = fitCanvas(plot, 220);
+        const box = { x: 40, y: 8, w: width - 50, h: 180 };
+        const { x, y } = panel(ctx, box, [0, span], [0, 2.1], 'vertical speed');
+        const n = Math.round((tc / span) * 200);
+        const series = (f: (s: number) => number, color: string, alpha: number, width: number, dash: number[]) => {
+          ctx.strokeStyle = color;
+          ctx.globalAlpha = alpha;
+          ctx.lineWidth = width;
+          ctx.setLineDash(dash);
+          ctx.beginPath();
+          for (let k = 0; k <= n; k++) {
+            const s = (k / 200) * span;
+            if (k) ctx.lineTo(x(s), y(f(s)));
+            else ctx.moveTo(x(s), y(f(s)));
+          }
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.globalAlpha = 1;
+        };
+        series((s) => speeds(cases[0], s)[0], t.accent, 1, 2.4, []);
+        series((s) => speeds(cases[0], s)[1], t.accent, 0.5, 2.4, []);
+        series((s) => (speeds(cases[1], s)[0] + speeds(cases[1], s)[1]) / 2, t.fg, 0.35, 6, []);
+        series((s) => (speeds(cases[0], s)[0] + speeds(cases[0], s)[1]) / 2, t.fg, 1, 2, [6, 5]);
+        ctx.font = `11px ${t.mono}`;
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'top';
+        const legend = [
+          ['first, left arm', t.accent, 1],
+          ['first, right arm', t.accent, 0.5],
+          ['sensor, both', t.fg, 1],
+        ] as const;
+        legend.forEach(([label, color, alpha], i) => {
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = color;
+          ctx.fillText(label, box.x + box.w - 4, box.y + 4 + i * 15);
+        });
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = t.muted;
+        ctx.textAlign = 'center';
+        for (const s of [0, 1, 2, 3, 4]) ctx.fillText(`${s} s`, x(s), box.y + box.h + 6);
+      }
+
+      const sensor = (c: { cs: number; cf: number }) => ((speeds(c, tc)[0] + speeds(c, tc)[1]) / 2).toFixed(3);
+      setStatus(status, `$t = ${tc.toFixed(2)}\\,\\text{s}$   sensor, first: $${sensor(cases[0])}$   sensor, second: $${sensor(cases[1])}$`);
+    };
+
+    root.querySelector('[data-play]')!.addEventListener('click', () => {
+      now = 0;
+      draw();
+    });
+    redrawOn(plot, draw);
+
+    if (!reduced) {
+      new IntersectionObserver(([e]) => (visible = e.isIntersecting)).observe(scene);
+      let last = performance.now();
+      const loop = (stamp: number) => {
+        const dt = Math.min(0.05, (stamp - last) / 1000);
+        last = stamp;
+        if (visible && now < span + 0.5) {
+          now += dt;
+          draw();
+        }
+        requestAnimationFrame(loop);
+      };
+      requestAnimationFrame(loop);
+    }
+  }
+</script>

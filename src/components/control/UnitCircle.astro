@@ -1,0 +1,164 @@
+---
+import katex from 'katex';
+
+const tex = (s: string) => katex.renderToString(s);
+---
+
+<figure class="viz" data-ucircle>
+  <div class="viz-controls">
+    <label><Fragment set:html={tex(String.raw`\theta`)} /> <input type="range" min="0" max="6.28" step="0.01" value="0.7" data-theta /><output data-theta-out></output></label>
+  </div>
+  <canvas data-canvas role="img" aria-label="The point q of theta on the unit circle, with its cosine and sine projections" style="cursor: grab; touch-action: none"></canvas>
+  <p class="viz-status" data-status></p>
+</figure>
+
+<script>
+  import { scaleLinear } from 'd3-scale';
+  import { fitCanvas, redrawOn, setStatus, theme } from '../../lib/viz';
+
+  for (const root of document.querySelectorAll<HTMLElement>('[data-ucircle]')) {
+    const canvas = root.querySelector<HTMLCanvasElement>('[data-canvas]')!;
+    const status = root.querySelector<HTMLElement>('[data-status]')!;
+    const slider = root.querySelector<HTMLInputElement>('[data-theta]')!;
+    let dragging = false;
+
+    const scales = () => {
+      const width = canvas.clientWidth;
+      const unit = Math.min((width - 40) / 3, 110);
+      return {
+        height: Math.round(unit * 2.9),
+        sx: scaleLinear().domain([0, 1]).range([width / 2, width / 2 + unit]),
+        sy: scaleLinear().domain([0, 1]).range([unit * 1.45, unit * 0.45]),
+      };
+    };
+
+    const draw = () => {
+      const t = theme();
+      const theta = Number(slider.value);
+      root.querySelector<HTMLOutputElement>('[data-theta-out]')!.value = `${theta.toFixed(2)} rad`;
+      const { height, sx, sy } = scales();
+      const { ctx } = fitCanvas(canvas, height);
+      const c = Math.cos(theta);
+      const s = Math.sin(theta);
+      const r = sx(1) - sx(0);
+
+      ctx.strokeStyle = t.muted;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(sx(-1.4), sy(0));
+      ctx.lineTo(sx(1.4), sy(0));
+      ctx.moveTo(sx(0), sy(-1.35));
+      ctx.lineTo(sx(0), sy(1.35));
+      ctx.stroke();
+      ctx.strokeStyle = t.line;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(sx(0), sy(0), r, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.fillStyle = t.fg;
+      ctx.font = '15px KaTeX_Main, serif';
+      for (const [px, py, label, ax, ay] of [
+        [1, 0, '1', 'left', 'bottom'],
+        [-1, 0, '−1', 'right', 'bottom'],
+      ] as const) {
+        ctx.beginPath();
+        ctx.arc(sx(px), sy(py), 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.textAlign = ax;
+        ctx.textBaseline = ay;
+        ctx.fillText(label, sx(px) + (ax === 'left' ? 6 : -6), sy(py) - 4);
+      }
+      ctx.font = '15px KaTeX_Math, serif';
+      for (const [py, label] of [
+        [1, 'j'],
+        [-1, '−j'],
+      ] as const) {
+        ctx.beginPath();
+        ctx.arc(sx(0), sy(py), 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.textAlign = 'left';
+        ctx.textBaseline = py > 0 ? 'bottom' : 'top';
+        ctx.fillText(label, sx(0) + 6, sy(py) + (py > 0 ? -3 : 3));
+      }
+
+      ctx.setLineDash([4, 4]);
+      ctx.strokeStyle = t.fg;
+      ctx.globalAlpha = 0.5;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(sx(c), sy(s));
+      ctx.lineTo(sx(c), sy(0));
+      ctx.moveTo(sx(c), sy(s));
+      ctx.lineTo(sx(0), sy(s));
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+
+      ctx.strokeStyle = t.accent;
+      ctx.lineWidth = 4;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(sx(0), sy(0));
+      ctx.lineTo(sx(c), sy(0));
+      ctx.stroke();
+      ctx.globalAlpha = 0.6;
+      ctx.beginPath();
+      ctx.moveTo(sx(0), sy(0));
+      ctx.lineTo(sx(0), sy(s));
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.lineCap = 'butt';
+
+      ctx.strokeStyle = t.fg;
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.moveTo(sx(0), sy(0));
+      ctx.lineTo(sx(c), sy(s));
+      ctx.stroke();
+      ctx.strokeStyle = t.accent;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.arc(sx(0), sy(0), r * 0.25, 0, -theta, true);
+      ctx.stroke();
+      ctx.fillStyle = t.accent;
+      ctx.beginPath();
+      ctx.arc(sx(c), sy(s), 6, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = t.fg;
+      ctx.font = '15px KaTeX_Main, serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = s >= 0 ? 'top' : 'bottom';
+      ctx.fillText('cos θ', sx(c / 2), sy(0) + (s >= 0 ? 6 : -6));
+      ctx.textAlign = c >= 0 ? 'right' : 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('sin θ', sx(0) + (c >= 0 ? -8 : 8), sy(s / 2));
+      ctx.font = '16px KaTeX_Math, serif';
+      ctx.textAlign = c >= 0 ? 'left' : 'right';
+      ctx.textBaseline = s >= 0 ? 'bottom' : 'top';
+      ctx.fillText('q(θ)', sx(c) + (c >= 0 ? 9 : -9), sy(s) + (s >= 0 ? -6 : 6));
+
+      const fmt = (v: number) => v.toFixed(2);
+      setStatus(status, `$\\theta = ${theta.toFixed(2)}\\,\\text{rad}\\ (${Math.round((theta * 180) / Math.PI)}^\\circ)$   $q(\\theta) = ${fmt(c)} ${s < 0 ? '-' : '+'} ${Math.abs(s).toFixed(2)}j$`);
+    };
+
+    const setFromPointer = (e: PointerEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      const { sx, sy } = scales();
+      const a = Math.atan2(sy.invert(e.clientY - rect.top), sx.invert(e.clientX - rect.left));
+      slider.value = String((a + 2 * Math.PI) % (2 * Math.PI));
+      draw();
+    };
+
+    canvas.addEventListener('pointerdown', (e) => {
+      dragging = true;
+      canvas.setPointerCapture(e.pointerId);
+      setFromPointer(e);
+    });
+    canvas.addEventListener('pointermove', (e) => dragging && setFromPointer(e));
+    canvas.addEventListener('pointerup', () => (dragging = false));
+    slider.addEventListener('input', draw);
+    redrawOn(canvas, draw);
+  }
+</script>

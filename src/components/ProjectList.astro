@@ -1,0 +1,100 @@
+---
+import { existsSync } from 'node:fs';
+import type { CollectionEntry } from 'astro:content';
+
+interface Props {
+  items: CollectionEntry<'projects'>[];
+}
+
+const { items } = Astro.props;
+---
+
+<ul class="projects">
+  {
+    items.map((p, i) => {
+      const hue = [...p.data.title].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
+      return (
+        <li class="rise" style={`--i: ${i + 3}`}>
+          {p.data.image ? (
+            <picture>
+              {p.data.image.endsWith('.svg') && existsSync(`public${p.data.image.replace(/\.svg$/, '.dark.svg')}`) && (
+                <source srcset={p.data.image.replace(/\.svg$/, '.dark.svg')} media="(prefers-color-scheme: dark)" />
+              )}
+              <img class="thumb" src={p.data.image} alt="" loading="lazy" />
+            </picture>
+          ) : (
+            <div class="thumb" style={`--h: ${hue}`} />
+          )}
+          <div>
+            <h3>{p.body?.trim() ? <a href={`/projects/${p.id}/`}>{p.data.title}</a> : p.data.link ? <a href={p.data.link}>{p.data.title}</a> : p.data.title}</h3>
+            <p class="summary">{p.data.summary}</p>
+            <p class="meta">
+              {`${p.data.year}${p.data.venue ? ` · ${p.data.venue}` : p.data.tags.length > 0 ? ` · ${p.data.tags.join(', ')}` : ''}`}
+            </p>
+          </div>
+        </li>
+      );
+    })
+  }
+</ul>
+
+<style>
+  .projects {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 1.75rem;
+  }
+
+  li {
+    display: grid;
+    grid-template-columns: 8.5rem 1fr;
+    gap: 1.25rem;
+    align-items: start;
+  }
+
+  .thumb {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background:
+      radial-gradient(circle at 25% 30%, hsl(var(--h) 85% 70% / 0.9), transparent 55%),
+      radial-gradient(circle at 80% 75%, hsl(calc(var(--h) + 50) 75% 55% / 0.9), transparent 60%),
+      hsl(calc(var(--h) + 20) 40% 25%);
+    transition: transform 0.25s ease;
+  }
+
+  li:hover .thumb {
+    transform: scale(1.03) rotate(-0.6deg);
+  }
+
+  h3 {
+    font-size: 1.12rem;
+    margin: 0 0 0.25rem;
+  }
+
+  h3 a {
+    color: var(--fg);
+  }
+
+  .summary {
+    margin: 0;
+  }
+
+  .meta {
+    margin: 0.3rem 0 0;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+
+  @media (max-width: 520px) {
+    li {
+      grid-template-columns: 5.5rem 1fr;
+      gap: 0.9rem;
+    }
+  }
+</style>

@@ -1,0 +1,238 @@
+---
+title: Complex numbers
+updated: 2026-10-31
+order: 2
+draft: false
+---
+
+import ComplexRate from '../../../components/control/ComplexRate.astro';
+import QuarterTurn from '../../../components/control/QuarterTurn.astro';
+import UnitCircle from '../../../components/control/UnitCircle.astro';
+import EulerSeries from '../../../components/control/EulerSeries.astro';
+
+In [modes](/notes/control/modes/), one oscillation turned out to need two numbers - a size and a place in its cycle - which we drew as a point turning in a plane. Call the two coordinates of the rotating point, or of the oscillator's state, $u$ and $v$.
+
+## The imaginary unit
+
+A **complex number** packages the pair into one symbol:
+
+$$
+z=u+jv, \qquad j^2=-1.
+$$
+
+The symbol $j$ is chosen to behave like a quarter-turn. Formally, it is the square root of $-1$; practically, it lets us combine a two-dimensional value into a single number. Two quarter-turns reverse an arrow, and multiplication by $-1$ also reverses an arrow; the rule $j^2=-1$ makes those statements identical. Indeed, multiplying $z$ by $j$ gives
+
+$$
+jz=j(u+jv)=-v+ju.
+$$
+
+The point $(u,v)$ has become $(-v,u)$, exactly a $90^\circ$ counterclockwise rotation.
+
+Drag $z$ around below and $jz$ follows, always a quarter-turn ahead and always the same length. Press *multiply by* $j$ twice and $z$ points the opposite way - that is $j^2=-1$. Press it four times and it is back where it started.
+
+<QuarterTurn />
+
+The coordinate $u$ is called the **real part** and $v$ is called the **imaginary part**. Electrical and control engineers use $j$ rather than $i$ because $i$ often denotes electric current. Nothing physical is imaginary here: $z$ is compact notation for the real pair $(u,v)$, together with an algebraic system to rotate it.
+
+The length of the corresponding arrow is
+
+$$
+|z|=\sqrt{u^2+v^2}.
+$$
+
+Multiplying $z$ by a positive real number stretches this arrow without changing its direction. Thus the same notation naturally handles the two operations visible in an oscillator's motion: rotation changes angle, while real scaling changes distance from the origin.
+
+## The unit circle
+
+Multiplication by $j$ gives one instantaneous quarter-turn. An oscillator, however, passes continuously through every angle between those quarter-turns. Let's build up towards fully describing this motion.
+
+Start at the point $1$ on the positive real axis and rotate counterclockwise through an angle $\theta$. Because the point remains on the unit circle, its horizontal coordinate is $\cos\theta$ and its vertical coordinate is $\sin\theta$. The corresponding complex number is therefore
+
+$$
+q(\theta)=\cos\theta+j\sin\theta.
+$$
+
+The symbol $q$ is only a temporary name for the rotating point. At this stage, this is simply a geometric statement that packages two coordinates on the two-dimensional circle into one symbol as a function of angle $\theta$.
+
+Drag the point around the circle below. Its shadow on the real axis is $\cos\theta$ and its shadow on the imaginary axis is $\sin\theta$.
+
+<UnitCircle />
+
+## Euler's formula
+
+Now I ask the reader to partake in a brief leap of faith. For a real number $x$, one exact definition of the exponential is the infinite **power series**
+
+$$
+e^x=1+x+\frac{x^2}{2!}+\frac{x^3}{3!}+\frac{x^4}{4!}+\cdots.
+$$
+
+The exclamation mark denotes a factorial: for example, $4!=4\cdot3\cdot2\cdot1$. The dots mean that the pattern continues with successively higher powers. Taking more terms gives increasingly accurate partial sums; in the limit, the series defines the exact value of $e^x$.
+
+Every operation on the right-hand side - addition, multiplication, and division by a real number - also makes sense for complex numbers. We therefore define the complex exponential using the same recipe:
+
+$$
+e^z=1+z+\frac{z^2}{2!}+\frac{z^3}{3!}+\frac{z^4}{4!}+\cdots, \qquad z\in\mathbb{C}.
+$$
+
+This is a definition, not yet a claim about circles or sinusoids.
+
+Now choose the particular complex input $z=j\theta$. The powers of $j$ repeat every four steps:
+
+$$
+j^0=1,\qquad j^1=j,\qquad j^2=-1,\qquad j^3=-j,\qquad j^4=1,\ldots
+$$
+
+Consequently, the even powers of $j\theta$ contribute real terms, while the odd powers contribute imaginary terms. This brings us to the result that connects the exponential to the rotating point.
+
+> **Euler's formula.** For every real angle $\theta$,
+>
+> $$
+> e^{j\theta}=\cos\theta+j\sin\theta.
+> $$
+
+*Proof.* Substitute $z=j\theta$ into the definition:
+
+$$
+\begin{aligned}
+e^{j\theta}
+&=1+j\theta+\frac{(j\theta)^2}{2!}+\frac{(j\theta)^3}{3!}+\frac{(j\theta)^4}{4!}+\cdots\\
+&=1+j\theta-\frac{\theta^2}{2!}-j\frac{\theta^3}{3!}+\frac{\theta^4}{4!}+\cdots.
+\end{aligned}
+$$
+
+Collecting the real terms and the imaginary terms separately gives
+
+$$
+e^{j\theta}=\left(1-\frac{\theta^2}{2!}+\frac{\theta^4}{4!}-\cdots\right)+j\left(\theta-\frac{\theta^3}{3!}+\frac{\theta^5}{5!}-\cdots\right).
+$$
+
+The two expressions in parentheses are precisely the power series for cosine and sine:
+
+$$
+\begin{aligned}
+\cos\theta&=1-\frac{\theta^2}{2!}+\frac{\theta^4}{4!}-\cdots,\\
+\sin\theta&=\theta-\frac{\theta^3}{3!}+\frac{\theta^5}{5!}-\cdots.
+\end{aligned}
+$$
+
+Therefore $e^{j\theta}=\cos\theta+j\sin\theta$. $\blacksquare$
+
+The coefficients in the sine and cosine series can be found from their successive derivatives at $\theta=0$: those derivatives cycle through the same four patterns as the powers of $j$. Euler's formula is therefore what the ordinary exponential becomes when its input points in the imaginary direction.
+
+We show a visual for the proof by drawing each term of the Taylor series as an arrow. Each term is the previous one multiplied by $j\theta/n$, so each arrow is turned a quarter-turn from the last and, once $n>\theta$, shorter. The chain curls around and settles onto $e^{j\theta}$ on the unit circle. Things to try:
+
+- Start with one term: the sum is just $1$. Add terms one at a time and watch the real terms (dark) and the imaginary terms (orange) alternate - exactly the split into the cosine and sine series in the proof.
+- Raise $\theta$ towards $\pi$. The early terms now grow before they shrink, so the chain swings far off the circle and needs more terms before it settles.
+
+<EulerSeries />
+
+Comparing Euler's formula with the geometric definition of $q(\theta)$ now gives
+
+$$
+q(\theta)=e^{j\theta}.
+$$
+
+The exponential notation is compact because its exponent stores the angle. At the four quarter-turns,
+
+$$
+e^{j0}=1, \qquad e^{j\pi/2}=j, \qquad e^{j\pi}=-1, \qquad e^{j3\pi/2}=-j.
+$$
+
+## Uniform circular motion
+
+We can now turn the angle-indexed point $q(\theta)$ into a motion through time. Let the angle increase at one radian per second, so that $\theta=t$, and write
+
+$$
+z(t)=e^{jt}=\cos t+j\sin t.
+$$
+
+A dot above a symbol will denote its derivative with respect to time. Differentiating gives
+
+$$
+\dot z(t)=-\sin t+j\cos t=j\bigl(\cos t+j\sin t\bigr)=jz(t).
+$$
+
+The exponential and the dynamic equation are thus two descriptions of the same motion.
+
+To see the two real coordinates inside $\dot z=jz$, write $z=u+jv$. Here $u=\cos t$ and $v=\sin t$, so
+
+$$
+\dot u=-v, \qquad \dot v=u.
+$$
+
+At the point $(u,v)$, the velocity $(-v,u)$ is a $90^\circ$ counterclockwise rotation of the radius $(u,v)$. The velocity is therefore tangent to the circle rather than pointing toward or away from the origin.
+
+The geometry already suggests that the radius remains fixed, which we can prove. The squared distance from the origin satisfies
+
+$$
+\frac{\mathrm{d}}{\mathrm{d}t}\left(u^2+v^2\right)=2u\dot u+2v\dot v=2u(-v)+2v(u)=0.
+$$
+
+Its derivative is zero, so the distance is constant. If the point begins at $z(0)=1$, it remains on the unit circle and turns counterclockwise at one radian per second.
+
+Euler's formula treats its argument as an angle. For a motion with angular frequency $\omega$ and initial phase $\phi$, that angle is $\theta(t)=\omega t+\phi$. Substituting this angle into Euler's formula and choosing a radius $A_0$ gives
+
+$$
+z(t)=A_0e^{j(\omega t+\phi)}=A_0\cos(\omega t+\phi)+jA_0\sin(\omega t+\phi).
+$$
+
+The real part is the sinusoid we observe on a time plot; the imaginary part is its quarter-cycle-shifted companion. The radius is $A_0$, the starting angle is $\phi$, and the angle advances at $\omega$ radians per second.
+
+Differentiating shows where the angular frequency enters the dynamics:
+
+$$
+\dot z(t)=j\omega A_0e^{j(\omega t+\phi)}=j\omega z(t).
+$$
+
+Compared with $\dot z=jz$, the factor $\omega$ simply changes the turning rate. For $\omega>0$, one complete turn takes
+
+$$
+T=\frac{2\pi}{\omega}.
+$$
+
+## Complex frequency
+
+So far, the radius remains fixed at $A_0$. To let the envelope change, multiply by a real exponential:
+
+$$
+z(t)=\underbrace{A_0e^{\sigma t}}_{\text{changing radius}}\underbrace{e^{j(\omega t+\phi)}}_{\text{changing angle}}.
+$$
+
+If $\sigma<0$, the radius shrinks; if $\sigma=0$, it remains constant; and if $\sigma>0$, it grows. Taking the real part gives the waveform we actually observe:
+
+$$
+\operatorname{Re}\{z(t)\}=A_0e^{\sigma t}\cos(\omega t+\phi).
+$$
+
+Because multiplying exponentials adds their exponents, the same motion can be written more compactly. Define
+
+$$
+z(0)=A_0e^{j\phi}, \qquad s=\sigma+j\omega.
+$$
+
+Then
+
+$$
+z(t)=z(0)e^{st}.
+$$
+
+The complex rate $s$ packages two real rates: $\sigma$ changes the radius, while $\omega$ changes the angle. The particular command or disturbance determines $A_0$ and $\phi$ - how strongly the mode is excited and where it begins in its cycle. The mode itself determines $\sigma$ and $\omega$ - how its envelope changes and how quickly it cycles.
+
+Finally, expand the compact dynamic equation $\dot z=sz$ back into real and imaginary components:
+
+$$
+\begin{aligned}
+\dot u&=\sigma u-\omega v,\\
+\dot v&=\omega u+\sigma v.
+\end{aligned}
+$$
+
+This form is exactly what a control designer wants to know about a natural motion. If $\sigma<0$, the mode returns to the origin and is **asymptotically stable**. If $\sigma>0$, it moves away from the origin and is **unstable**. If $\sigma=0$, an ideal oscillation persists forever. The imaginary part $\omega$ tells us how rapidly it oscillates. Although $z(t)$ is complex, the observed waveform remains real: it is the horizontal component $\operatorname{Re}\{z(t)\}$.
+
+In the figure below, the dark arrow is the radius $z(t)$ and the orange arrow is the velocity $\dot z=sz$. Things to try:
+
+- Set $\sigma=0$. The velocity stays exactly perpendicular to the radius, so the point stays on the unit circle and the real part is a pure cosine.
+- Drag $\sigma$ negative. The velocity now leans inward, the point spirals towards the origin, and the real part decays inside its dashed envelope $e^{\sigma t}$. Push $\sigma$ above zero and the velocity leans outward instead.
+- Change $\omega$ with $\sigma$ fixed. The envelope does not move at all - only the number of turns inside it changes. Set $\omega=0$ and the point slides along the real axis without turning: a pure exponential.
+
+<ComplexRate />

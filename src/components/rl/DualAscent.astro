@@ -1,0 +1,126 @@
+---
+import katex from 'katex';
+
+const tex = (s: string) => katex.renderToString(s);
+---
+
+<figure class="viz" data-dual>
+  <div class="viz-controls">
+    <label><Fragment set:html={tex(String.raw`d`)} /> <input type="range" min="40" max="110" step="1" value="70" data-d /><output data-d-out>70 A</output></label>
+    <label><Fragment set:html={tex(String.raw`\eta_\lambda`)} /> <input type="range" min="-5.5" max="-2" step="0.05" value="-3.7" data-eta /><output data-eta-out></output></label>
+    <div class="viz-seg"><button type="button" data-replay aria-pressed="false">replay</button></div>
+  </div>
+  <canvas data-canvas role="img" aria-label="Reward, cost and multiplier over the dual ascent iterations"></canvas>
+  <p class="viz-status" data-status></p>
+</figure>
+
+<script>
+  import { line } from 'd3-shape';
+  import { fitCanvas, panel, redrawOn, setStatus, theme } from '../../lib/viz';
+
+  const steps = 300;
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const simulate = (d: number, eta: number) => {
+    let theta = 0.1;
+    let lambda = 0;
+    const rows: [number, number, number][] = [];
+    for (let i = 0; i <= steps; i++) {
+      rows.push([1 - (1 - theta) ** 2, 20 + 80 * theta ** 2, lambda]);
+      theta = Math.min(1, Math.max(0, theta + 0.02 * (2 * (1 - theta) - lambda * 160 * theta)));
+      lambda = Math.max(0, lambda + eta * (20 + 80 * theta ** 2 - d));
+    }
+    const star = Math.min(1, Math.sqrt(Math.max(0, d - 20) / 80));
+    return { rows, lambdaStar: star < 1 ? (2 * (1 - star)) / (160 * star) : 0 };
+  };
+
+  for (const root of document.querySelectorAll<HTMLElement>('[data-dual]')) {
+    const canvas = root.querySelector<HTMLCanvasElement>('[data-canvas]')!;
+    const status = root.querySelector<HTMLElement>('[data-status]')!;
+    const dIn = root.querySelector<HTMLInputElement>('[data-d]')!;
+    const etaIn = root.querySelector<HTMLInputElement>('[data-eta]')!;
+    let sim = simulate(70, 10 ** -3.7);
+    let shown = reduced ? steps : 0;
+    let visible = false;
+
+    const draw = () => {
+      const t = theme();
+      const d = Number(dIn.value);
+      const { ctx, width } = fitCanvas(canvas, 330);
+      const shownRows = sim.rows.slice(0, shown + 1);
+      const lambdaMax = Math.max(sim.lambdaStar * 2.2, ...sim.rows.map((r) => r[2]), 1e-4);
+      const specs = [
+        { title: 'reward J_R', col: 0, domain: [0, 1] as [number, number], ref: null as number | null },
+        { title: 'current J_c [A]', col: 1, domain: [20, 110] as [number, number], ref: d },
+        { title: 'multiplier λ', col: 2, domain: [0, lambdaMax] as [number, number], ref: sim.lambdaStar },
+      ];
+      specs.forEach((spec, i) => {
+        const box = { x: 52, y: 6 + i * 104, w: width - 62, h: 86 };
+        const { x, y } = panel(ctx, box, [0, steps], spec.domain, spec.title);
+        if (spec.ref !== null) {
+          ctx.setLineDash([4, 4]);
+          ctx.strokeStyle = t.muted;
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          ctx.moveTo(box.x, y(spec.ref));
+          ctx.lineTo(box.x + box.w, y(spec.ref));
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+        ctx.strokeStyle = t.accent;
+        ctx.lineWidth = 2.2;
+        ctx.beginPath();
+        line<[number, number, number]>()
+          .x((_, j) => x(j))
+          .y((r) => y(Math.min(r[spec.col], spec.domain[1] * 1.05)))
+          .context(ctx)(shownRows);
+        ctx.stroke();
+      });
+      ctx.fillStyle = t.muted;
+      ctx.font = `11px ${t.mono}`;
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'top';
+      ctx.fillText(`iteration ${shown}`, width - 10, 316);
+      const last = sim.rows[shown];
+      const sci = (v: number) => {
+        if (v === 0) return '0';
+        const [m, e] = v.toExponential(2).split('e');
+        return `${m} \\times 10^{${Number(e)}}`;
+      };
+      setStatus(
+        status,
+        `$J_c = ${last[1].toFixed(1)}\\,\\text{A}$ (limit $${d}\\,\\text{A}$), $\\lambda = ${sci(last[2])}$ ($\\lambda^* = ${sci(sim.lambdaStar)}$), $J_R = ${last[0].toFixed(3)}$.`,
+      );
+    };
+
+    const update = () => {
+      const eta = 10 ** Number(etaIn.value);
+      root.querySelector<HTMLOutputElement>('[data-d-out]')!.value = `${dIn.value} A`;
+      root.querySelector<HTMLOutputElement>('[data-eta-out]')!.value = eta.toExponential(1);
+      sim = simulate(Number(dIn.value), eta);
+      shown = reduced ? steps : 0;
+      draw();
+    };
+
+    dIn.addEventListener('input', update);
+    etaIn.addEventListener('input', update);
+    root.querySelector('[data-replay]')!.addEventListener('click', () => {
+      shown = 0;
+      draw();
+    });
+    redrawOn(canvas, draw);
+    update();
+
+    if (!reduced) {
+      new IntersectionObserver(([e]) => (visible = e.isIntersecting)).observe(canvas);
+      const loop = () => {
+        if (visible && shown < steps) {
+          shown = Math.min(steps, shown + 2);
+          draw();
+        }
+        requestAnimationFrame(loop);
+      };
+      requestAnimationFrame(loop);
+    }
+  }
+</script>

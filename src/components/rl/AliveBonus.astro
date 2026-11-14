@@ -1,0 +1,188 @@
+---
+import katex from 'katex';
+
+const tex = (s: string) => katex.renderToString(s);
+---
+
+<figure class="viz" data-alive>
+  <div class="viz-controls">
+    <label><Fragment set:html={tex(String.raw`b`)} /> <input type="range" min="-0.5" max="0.5" step="0.01" value="0" data-b /><output data-b-out>0.00</output></label>
+    <label><Fragment set:html={tex(String.raw`\gamma`)} /> <input type="range" min="0.5" max="0.99" step="0.01" value="0.9" data-g /><output data-g-out>0.90</output></label>
+  </div>
+  <canvas data-corridor role="img" aria-label="Corridor MDP with the optimal policy for the selected bonus"></canvas>
+  <p class="viz-status" data-status></p>
+  <canvas data-plot role="img" aria-label="Return added by the bonus as a function of episode length"></canvas>
+</figure>
+
+<script>
+  import { line } from 'd3-shape';
+  import { fitCanvas, panel, redrawOn, theme } from '../../lib/viz';
+
+  const N = 9;
+  const start = 2;
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const solve = (b: number, gamma: number) => {
+    const V = new Float64Array(N);
+    const q = (s: number, a: number) => {
+      const n = s + a;
+      return b + (n === N - 1 ? 1 : 0) + (n === 0 || n === N - 1 ? 0 : gamma * V[n]);
+    };
+    for (let it = 0; it < 20000; it++) {
+      let delta = 0;
+      for (let s = 1; s < N - 1; s++) {
+        const best = Math.max(q(s, 1), q(s, -1));
+        delta = Math.max(delta, Math.abs(best - V[s]));
+        V[s] = best;
+      }
+      if (delta < 1e-12) break;
+    }
+    const policy = Array.from({ length: N }, (_, s) => (s === 0 || s === N - 1 ? 0 : q(s, 1) >= q(s, -1) - 1e-9 ? 1 : -1));
+    const path = [start];
+    while (path.length < 60 && !(path[path.length - 1] === 0 || path[path.length - 1] === N - 1)) {
+      path.push(path[path.length - 1] + policy[path[path.length - 1]]);
+    }
+    return { policy, path };
+  };
+
+  for (const root of document.querySelectorAll<HTMLElement>('[data-alive]')) {
+    const corridor = root.querySelector<HTMLCanvasElement>('[data-corridor]')!;
+    const plot = root.querySelector<HTMLCanvasElement>('[data-plot]')!;
+    const status = root.querySelector<HTMLElement>('[data-status]')!;
+    const bIn = root.querySelector<HTMLInputElement>('[data-b]')!;
+    const gIn = root.querySelector<HTMLInputElement>('[data-g]')!;
+    let result = solve(0, 0.9);
+    let tick = 0;
+
+    const drawCorridor = () => {
+      const t = theme();
+      const { ctx, width } = fitCanvas(corridor, 96);
+      const cell = Math.min(64, (width - 8) / N);
+      const x0 = (width - cell * N) / 2;
+      const y0 = 14;
+      const cx = (s: number) => x0 + s * cell + cell / 2;
+      ctx.font = `11px ${t.mono}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      for (let s = 0; s < N; s++) {
+        const terminal = s === 0 || s === N - 1;
+        ctx.globalAlpha = terminal ? 0.2 : 1;
+        ctx.fillStyle = s === N - 1 ? t.accent : terminal ? t.muted : t.surface;
+        ctx.fillRect(x0 + s * cell + 2, y0, cell - 4, cell - 4);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = s === N - 1 ? t.accent : t.line;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x0 + s * cell + 2.5, y0 + 0.5, cell - 5, cell - 5);
+        ctx.fillStyle = t.muted;
+        if (terminal) ctx.fillText(s ? 'goal' : 'crash', cx(s), y0 + cell + 6);
+        if (s === start) ctx.fillText('S', cx(s), y0 + cell + 6);
+        if (terminal) continue;
+        const d = result.policy[s];
+        const y = y0 + cell * 0.72;
+        ctx.strokeStyle = t.fg;
+        ctx.fillStyle = t.fg;
+        ctx.globalAlpha = 0.55;
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.moveTo(cx(s) - d * cell * 0.16, y);
+        ctx.lineTo(cx(s) + d * cell * 0.16, y);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(cx(s) + d * cell * 0.2, y);
+        ctx.lineTo(cx(s) + d * cell * 0.08, y - 4);
+        ctx.lineTo(cx(s) + d * cell * 0.08, y + 4);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+      const path = result.path;
+      const pos = reduced ? path.length - 1 : Math.min(Math.floor(tick / 22), path.length - 1);
+      ctx.fillStyle = t.accent;
+      ctx.beginPath();
+      ctx.arc(cx(path[pos]), y0 + cell * 0.36, Math.max(5, cell * 0.12), 0, Math.PI * 2);
+      ctx.fill();
+    };
+
+    const drawPlot = () => {
+      const b = Number(bIn.value);
+      const gamma = Number(gIn.value);
+      const t = theme();
+      const { ctx, width } = fitCanvas(plot, 214);
+      const cap = 0.5 / (1 - gamma);
+      const box = { x: 44, y: 8, w: width - 56, h: 160 };
+      const { x, y } = panel(ctx, box, [0, 40], [-cap, cap], 'return added by the bonus');
+      const curve = Array.from({ length: 81 }, (_, i) => [i / 2, (b * (1 - gamma ** (i / 2))) / (1 - gamma)] as [number, number]);
+      ctx.setLineDash([4, 4]);
+      ctx.strokeStyle = t.muted;
+      ctx.beginPath();
+      ctx.moveTo(box.x, y(b / (1 - gamma)));
+      ctx.lineTo(box.x + box.w, y(b / (1 - gamma)));
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.strokeStyle = t.accent;
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      line<[number, number]>()
+        .x((d) => x(d[0]))
+        .y((d) => y(d[1]))
+        .context(ctx)(curve);
+      ctx.stroke();
+      ctx.font = `11px ${t.mono}`;
+      ctx.textBaseline = 'middle';
+      for (const [T, label] of [
+        [start, 'crash'],
+        [N - 1 - start, 'goal'],
+      ] as const) {
+        const py = y((b * (1 - gamma ** T)) / (1 - gamma));
+        ctx.fillStyle = t.accent;
+        ctx.beginPath();
+        ctx.arc(x(T), py, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = t.fg;
+        ctx.textAlign = 'left';
+        ctx.fillText(label, x(T) + 7, py + (label === 'crash' ? -10 : 10));
+      }
+      ctx.fillStyle = t.muted;
+      ctx.textAlign = 'right';
+      ctx.fillText('T → ∞', box.x + box.w, y(b / (1 - gamma)) + (b >= 0 ? 10 : -10));
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      for (const T of [0, 10, 20, 30, 40]) ctx.fillText(String(T), x(T), box.y + box.h + 6);
+      ctx.fillText('episode length T', box.x + box.w / 2, box.y + box.h + 22);
+    };
+
+    const update = () => {
+      const b = Number(bIn.value);
+      const gamma = Number(gIn.value);
+      root.querySelector<HTMLOutputElement>('[data-b-out]')!.value = b.toFixed(2);
+      root.querySelector<HTMLOutputElement>('[data-g-out]')!.value = gamma.toFixed(2);
+      result = solve(b, gamma);
+      tick = 0;
+      const end = result.path[result.path.length - 1];
+      const T = result.path.length - 1;
+      const goal = (b * (1 - gamma ** (N - 1 - start))) / (1 - gamma) + gamma ** (N - 2 - start);
+      const crash = (b * (1 - gamma ** start)) / (1 - gamma);
+      const forever = b / (1 - gamma);
+      const choice = end === N - 1 ? `reaches the goal in ${T} steps` : end === 0 ? `crashes in ${T} steps` : 'never ends the episode';
+      status.textContent = `Optimal agent ${choice}. Returns: goal ${goal.toFixed(2)}, crash ${crash.toFixed(2)}, never end ${forever.toFixed(2)}.`;
+      drawCorridor();
+      drawPlot();
+    };
+
+    bIn.addEventListener('input', update);
+    gIn.addEventListener('input', update);
+    redrawOn(plot, update);
+
+    if (!reduced) {
+      let visible = false;
+      new IntersectionObserver(([e]) => (visible = e.isIntersecting)).observe(corridor);
+      const loop = () => {
+        if (visible) {
+          tick = (tick + 1) % (22 * (result.path.length + 3));
+          if (tick % 22 === 0) drawCorridor();
+        }
+        requestAnimationFrame(loop);
+      };
+      requestAnimationFrame(loop);
+    }
+  }
+</script>
