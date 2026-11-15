@@ -9,13 +9,13 @@ import MassSpring from '../../../components/control/MassSpring.astro';
 
 Imagine we give a dynamic system a brief disturbance, then stop touching it. A temperature difference fades. A suspended weight swings. A glass rings. The resulting motion is not usually arbitrary: systems tend to respond in recognizable patterns. We call one such characteristic pattern a **mode**. This is an intuitive definition that we will refine later.
 
-Modes matter in control because every command, disturbance, and feedback correction can excite them. A well-designed controller makes unwanted motion fade. A poorly designed controller may allow it to ring for too long, or may even cause it to grow. Some modes simply fade or grow without oscillating.
+Slightly more formally, the continuous-time systems we study here are modeled by ordinary differential equations. Given an initial state and the inputs over time, this model determines how the system evolves. Modes describe its characteristic ways of evolving. We identify them from the unforced motion (how the system state evolves without additional input), but they also shape how the system responds to inputs.
 
-Richer motions can be composed from simpler modal contributions, each with its own amplitude, phase, frequency, and rate of decay or growth. Later we will learn when and why such a decomposition is possible. First, let us consider a single oscillatory mode and understand it fully.
+Modes matter in control because commands, disturbances, and feedback corrections can excite them. A well-designed controller makes unwanted motion fade. A poorly designed controller may allow it to ring for too long, or may even cause it to grow. Some modes simply fade or grow without oscillating. A central part of linear control is shaping the closed-loop system’s modes to produce the desired response.
 
 ## A mass-spring oscillator
 
-Imagine a weight attached to a spring on a smooth table where we pull the weight to the right and release it. We expect it to slide through its resting position, compres the spring on the other side, reverse direction, and repeat.
+Imagine a weight attached to a spring on a smooth table where we pull the weight to the right and release it. We expect it to slide through its resting position, compress the spring on the other side, reverse direction, and repeat.
 
 Call the weight's displacement from its resting position $x(t)$. In the picture below, the pale outline marks the resting position $x=0$. The solid weight has been pulled to the right, so $x(t)>0$. The stretched spring pulls left, toward equilibrium; after release, the weight's inertia will carry it through the center.
 
@@ -24,17 +24,19 @@ Call the weight's displacement from its resting position $x(t)$. In the picture 
 <figcaption>Pulling the mass away from equilibrium stores energy in the spring. The spring accelerates the mass back toward the center, while the mass's inertia carries it onward.</figcaption>
 </figure>
 
-Now focus on one position slightly to the right of center. The weight passes through that same position twice during every cycle: once while moving left and once while moving right. Its position is identical at those two instants, but what happens at the next time step is different because the velocities differ. Position alone is therefore not enough to describe the motion. We also need its velocity.
+Now consider the weight as it passes through the center. It crosses that same position twice during every cycle: once moving left and once moving right. Its position is identical, but what happens next differs because its velocity differs. Position alone is therefore not enough to describe the motion. We also need its velocity.
+
+Below, the same motion is drawn three ways at once: the mass itself, its position over time, and its position against its (scaled) velocity.
+
+<MassSpring />
 
 At either extreme, the weight momentarily stops before reversing, so its velocity is zero. At the resting position, its speed is greatest. The state repeatedly cycles through combinations of position and velocity. If no energy were lost, a suitably scaled plot of these two coordinates would form a circle. Friction removes a little energy on every cycle, so the loop becomes an inward spiral. In the position trace, oscillation and decay are superimposed; in the two-coordinate view, they separate into turning around the origin and shrinking toward it.
 
-Below, the same motion is drawn three ways at once: the mass itself, its position over time, and its position against its (scaled) velocity. The slider $\sigma$ is the decay rate: it sets how fast friction shrinks the size of the swing. Negative $\sigma$ means the motion dies out, and the more negative it is, the faster. We define it properly in the next section. Things to try:
+The slider $\sigma$ is the decay rate, which sets how fast friction shrinks the amplitude of the oscillation. Negative $\sigma$ means the motion dies out, and the more negative it is, the faster. A couple things to try out with the visualization:
 
 - Watch the mass and the spiral together. The mass is at an extreme - momentarily stopped - exactly when the spiral crosses the horizontal axis, and passes through the center when the spiral crosses the vertical axis.
 - Drag $\sigma$ to zero. Nothing removes energy any more, so the spiral closes into a circle and the envelope in the time plot goes flat.
-- Raise the frequency with $\sigma$ fixed. More cycles fit into the same time, so each turn of the spiral shrinks less: how much a mode decays per cycle depends on $\sigma$ relative to its frequency.
-
-<MassSpring />
+- Raise the frequency with $\sigma$ fixed. More cycles fit into the same time, so each turn of the spiral shrinks less.
 
 ## The modal waveform
 
@@ -52,10 +54,84 @@ $$
 
 If $\sigma<0$, the envelope shrinks; if $\sigma=0$, its size remains constant; and if $\sigma>0$, it grows. The spring is only one physical realization of this pattern. Whenever a single growing, decaying, or persistent oscillation appears, the same four parameters can describe its time history.
 
-## The state plane
+## Why exponentials?
 
-The position-velocity plot should not be mistaken for physical space. Position and velocity even have different units; we draw them along perpendicular directions on the page simply to keep two independent pieces of information visible. For the spring, suitably scaled position and velocity uniquely determine its state in the cycle. For another oscillatory mode, the useful coordinates may represent different physical quantities. What generalizes is that one oscillation has both a size and a place in its cycle. Those two numbers can be drawn as the radius and angle of a point in a plane.
+I'd like to briefly pause to explain something more basic, which some people skim over and others may find trivially true.
+We represent modes with exponentials, but the application of the exponential here is not just a convenient fit; it comes from the solution to the differential equation that defines the system.
+For a mass $m$, a spring with stiffness $k$, damping $c$, and an applied force $f(t)$, Newton's law gives
 
-[Complex numbers](/notes/control/complex-numbers/) will turn this expression from a collection of factors into one geometric motion. Amplitude will become distance from the origin, phase will become starting direction, frequency will become turning rate, and growth or decay will become radial expansion or contraction.
+$$
+m\ddot x+c\dot x+kx=f(t).
+$$
 
-The state picture suggests the algebra we would like to have. We want one object that keeps both coordinates together. Advancing an ideal oscillator through a quarter-cycle should rotate that object by $90^\circ$. Damping should shrink its distance from the origin. If rotation and scaling can be expressed as ordinary algebra, then oscillation and decay become much easier to describe.
+The initial position and velocity tell us where the motion starts, and $f(t)$ is the force we apply to it. To find the natural motions, set $f(t)=0$. We now need a function whose position, velocity, and acceleration satisfy
+
+$$
+m\ddot x+c\dot x+kx=0
+$$
+
+Why look for an exponential? Because it keeps the same shape when differentiated. If $x(t)=Ce^{st}$, then
+
+$$
+\dot x=sCe^{st}, \qquad \ddot x=s^2Ce^{st}.
+$$
+
+Position, velocity, and acceleration are all constant multiples of the same function $Ce^{st}$. This gives us a way for the three terms to cancel at every instant. Substituting gives
+
+$$
+ms^2Ce^{st}+csCe^{st}+kCe^{st}
+=(ms^2+cs+k)Ce^{st}=0.
+$$
+
+For a nonzero motion, $C\ne0$, and the exponential is never zero. We can therefore divide it out, leaving
+
+$$
+ms^2+cs+k=0.
+$$
+
+We have chosen a family of functions that makes differentiation simple, and the equation now tells us exactly which rates $s$ actually represent the dynamics of the system. This is the **characteristic equation**.
+
+A single exponential is not generally the full solution. Because the equation is linear and has zero on the right-hand side, sums of solutions are also solutions. With two distinct roots, the general solution is a combination of the two corresponding exponentials.
+
+## Example
+
+Let us take a $1\,\mathrm{kg}$ mass, a damping coefficient of $2\,\mathrm{N\,s/m}$, and a spring stiffness of $5\,\mathrm{N/m}$. With no applied force, dividing the equation by the mass gives
+
+$$
+\ddot x+2\dot x+5x=0.
+$$
+
+Trying $x=Ce^{st}$ gives the characteristic equation $s^2+2s+5=0$. Using the quadratic formula,
+
+$$
+s_{1,2}=\frac{-2\pm\sqrt{2^2-4(1)(5)}}{2}
+=\frac{-2\pm\sqrt{-16}}{2}
+=-1\pm2j.
+$$
+
+These are the two modal rates, in inverse seconds. The corresponding exponential solutions are $e^{(-1+2j)t}$ and $e^{(-1-2j)t}$. Together, this conjugate pair describes one real oscillation:
+
+$$
+x(t)=e^{-t}\bigl(C_1\cos 2t+C_2\sin 2t\bigr).
+$$
+
+We can already say quite a bit without choosing an initial position or velocity:
+
+- The real part is $\sigma=-1\,\mathrm{s}^{-1}$, so the envelope falls to $e^{-1}\approx37\%$ of its initial size after one second.
+- The imaginary part has magnitude $\omega=2\,\mathrm{rad/s}$, so one cycle takes $T=2\pi/\omega=\pi\approx3.14\,\mathrm{s}$.
+- Both roots have negative real parts, so the motion dies out rather than growing.
+
+Now pull the mass $0.1\,\mathrm{m}$ to the right and release it from rest. The initial conditions are $x(0)=0.1$ and $\dot x(0)=0$. Substituting the first gives $C_1=0.1$. Differentiating the solution and evaluating at zero gives
+
+$$
+\dot x(0)=-C_1+2C_2=0,
+\qquad C_2=0.05.
+$$
+
+Our actual motion is therefore
+
+$$
+\boxed{x(t)=e^{-t}\bigl(0.1\cos 2t+0.05\sin 2t\bigr)\ \mathrm{m},}
+$$
+
+with $t$ measured in seconds.

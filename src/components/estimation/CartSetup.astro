@@ -1,0 +1,47 @@
+<figure class="viz" data-cart-setup>
+  <div class="viz-controls">
+    <div class="viz-seg"><button type="button" data-play aria-pressed="false">play</button><button type="button" data-reset>reset</button></div>
+    <label>Acceleration command u <input aria-label="Cart acceleration command" type="range" min="-1" max="1" step="0.1" value="0.5" /><output>0.5 m/s²</output></label>
+  </div>
+  <svg viewBox="0 0 600 235" role="img" aria-label="Motor-driven cart with acceleration command u and measured position y equals p">
+    <path d="M45 150H565" class="track" />
+    <path d="M45 155v8 M175 155v8 M305 155v8 M435 155v8 M565 155v8" class="track" />
+    <g class="ticks"><text x="45" y="180">0 m</text><text x="175" y="180">2 m</text><text x="305" y="180">4 m</text><text x="435" y="180">6 m</text><text x="565" y="180">8 m</text></g>
+    <g data-cart transform="translate(110 0)">
+      <rect x="-24" y="108" width="48" height="28" rx="3" class="body" />
+      <circle cx="-15" cy="143" r="7" class="wheel" /><circle cx="15" cy="143" r="7" class="wheel" />
+      <path data-arrow d="M0 90H35l-6 -5m6 5l-6 5" class="command" />
+    </g>
+    <path data-measure d="M45 205H110" class="command" />
+  </svg>
+  <p class="viz-status" data-status>Measured position y = 1.00 m</p>
+</figure>
+<style>
+  svg {display:block;width:100%;height:auto;overflow:visible;}
+  text {fill:var(--muted);font:12px var(--mono);}
+  .ticks text {text-anchor:middle;}
+  .track {stroke:var(--line);stroke-width:2;fill:none;}
+  .body {stroke:var(--fg);stroke-width:2;fill:var(--surface);}
+  .wheel {fill:var(--fg);}
+  .command {stroke:var(--accent);stroke-width:2;fill:none;}
+</style>
+<script>
+  for(const root of document.querySelectorAll<HTMLElement>('[data-cart-setup]')) {
+    const slider=root.querySelector('input')!, play=root.querySelector<HTMLButtonElement>('[data-play]')!;
+    let p=1,v=0.5,running=false,last=0,frame=0;
+    const stop=()=>{running=false;cancelAnimationFrame(frame);play.textContent='play';play.setAttribute('aria-pressed','false');};
+    const draw=()=>{
+      const u=Number(slider.value),x=45+65*p,end=u*60;
+      root.querySelector('[data-cart]')!.setAttribute('transform',`translate(${x} 0)`);
+      root.querySelector('[data-arrow]')!.setAttribute('d',Math.abs(u)<0.01?'':`M0 90H${end}l${-Math.sign(u)*6} -5m${Math.sign(u)*6} 5l${-Math.sign(u)*6} 5`);
+      root.querySelector('[data-measure]')!.setAttribute('d',`M45 198v12m0 -5H${x}m0 -7v14`);
+      root.querySelector('output')!.textContent=`${u.toFixed(1)} m/s²`;
+      root.querySelector('[data-status]')!.textContent=`Measured position y = ${p.toFixed(2)} m${p<=0||p>=8 ? ' · Track limit reached; reset to replay' : ''}`;
+    };
+    const tick=(now:number)=>{if(!running)return;const dt=Math.min((now-last)/1000,0.05),u=Number(slider.value);last=now;p+=v*dt+u*dt*dt/2;v+=u*dt;if(p<=0||p>=8){p=Math.max(0,Math.min(8,p));stop();}draw();if(running)frame=requestAnimationFrame(tick);};
+    play.addEventListener('click',()=>{if(running){stop();return;}if(p<=0||p>=8){p=1;v=0.5;}running=true;last=performance.now();play.textContent='pause';play.setAttribute('aria-pressed','true');frame=requestAnimationFrame(tick);});
+    root.querySelector('[data-reset]')!.addEventListener('click',()=>{stop();p=1;v=0.5;draw();});
+    slider.addEventListener('input',draw);
+    document.addEventListener('visibilitychange',()=>{if(document.hidden)stop();});draw();
+  }
+</script>

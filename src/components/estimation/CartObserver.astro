@@ -1,0 +1,102 @@
+<figure class="viz" data-cart-observer>
+  <div class="viz-controls">
+    <div class="viz-seg"><button type="button" data-play aria-pressed="false">play</button><button type="button" data-reset>reset</button></div>
+    <label>Time <input aria-label="Cart simulation time" type="range" min="0" max="6" step="0.01" value="0" data-time /><output data-time-out>0.00 s</output></label>
+  </div>
+  <div class="cart-parameters">
+    <fieldset><legend>Real cart at t = 0</legend>
+      <label>Position (m) <input data-param="p" aria-label="Initial real position" type="range" min="-3" max="3" step="0.1" value="1" /><output>1.0</output></label>
+      <label>Velocity (m/s) <input data-param="v" aria-label="Initial real velocity" type="range" min="-2" max="2" step="0.1" value="1" /><output>1.0</output></label>
+    </fieldset>
+    <fieldset><legend>Observer at t = 0</legend>
+      <label>Position (m) <input data-param="ph" aria-label="Initial estimated position" type="range" min="-3" max="3" step="0.1" value="0" /><output>0.0</output></label>
+      <label>Velocity (m/s) <input data-param="vh" aria-label="Initial estimated velocity" type="range" min="-2" max="2" step="0.1" value="0" /><output>0.0</output></label>
+    </fieldset>
+    <fieldset><legend>Observer gains</legend>
+      <label>ℓp (1/s) <input data-param="lp" aria-label="Position gain" type="range" min="0" max="10" step="0.1" value="5" /><output>5.0</output></label>
+      <label>ℓv (1/s²) <input data-param="lv" aria-label="Velocity gain" type="range" min="0" max="15" step="0.1" value="6" /><output>6.0</output></label>
+    </fieldset>
+  </div>
+  <canvas role="img" aria-label="Real and estimated carts on parallel tracks, with position residual and velocity estimates over time"></canvas>
+  <p class="viz-status" data-status></p>
+</figure>
+
+<script>
+  import { fitCanvas, panel, redrawOn, theme } from '../../lib/viz';
+  for (const root of document.querySelectorAll<HTMLElement>('[data-cart-observer]')) {
+    const canvas = root.querySelector('canvas')!;
+    const play = root.querySelector<HTMLButtonElement>('[data-play]')!;
+    const slider = root.querySelector<HTMLInputElement>('[data-time]')!;
+    const status = root.querySelector<HTMLElement>('[data-status]')!;
+    let time = 0, running = false, frame = 0, last = 0;
+    const stop = () => { running=false; cancelAnimationFrame(frame); play.textContent='play'; play.setAttribute('aria-pressed','false'); };
+    const parameters = [...root.querySelectorAll<HTMLInputElement>('[data-param]')];
+    const values = () => Object.fromEntries(parameters.map(el => [el.dataset.param!, Number(el.value)]));
+    // exp((A-LC)t), including repeated roots and zero gains.
+    const state = (t: number) => {
+      const q=values(), ep0=q.p-q.ph, ev0=q.v-q.vh;
+      const half=q.lp/2, d=half*half-q.lv;
+      let C: number, S: number;
+      if (Math.abs(d)<1e-10) { C=Math.exp(-half*t); S=t*C; }
+      else if(d>0) {
+        const w=Math.sqrt(d), a=Math.exp((-half+w)*t), b=Math.exp((-half-w)*t);
+        C=(a+b)/2; S=(a-b)/(2*w);
+      } else {
+        const w=Math.sqrt(-d), decay=Math.exp(-half*t);
+        C=decay*Math.cos(w*t); S=decay*Math.sin(w*t)/w;
+      }
+      const ep=C*ep0+S*(-half*ep0+ev0);
+      const ev=C*ev0+S*(-q.lv*ep0+half*ev0);
+      return { p:q.p+q.v*t, ph:q.p+q.v*t-ep, v:q.v, vh:q.v-ev, residual:ep };
+    };
+    const draw = () => {
+      const c=theme(), {ctx,width}=fitCanvas(canvas,390), s=state(time);
+      const samples=Array.from({length:301},(_,i)=>state(i/50));
+      const positions=samples.flatMap(s=>[s.p,s.ph]), velocities=samples.flatMap(s=>[s.v,s.vh]);
+      const lo=Math.floor(Math.min(...positions))-1, hi=Math.ceil(Math.max(...positions))+1;
+      const left=45, right=width-45, px=(p:number)=>left+(p-lo)/(hi-lo)*(right-left);
+      const arrowScale=35/Math.max(1,...velocities.map(Math.abs));
+      ctx.font=`11px ${c.mono}`; ctx.textBaseline='middle';
+      for (const [y,p,v,label,color] of [[62,s.p,s.v,'real',c.fg],[151,s.ph,s.vh,'estimate',c.accent]] as const) {
+        ctx.strokeStyle=c.line; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(left,y+20); ctx.lineTo(right,y+20); ctx.stroke();
+        ctx.fillStyle=color; ctx.textAlign='left'; ctx.fillText(label,left,y-36);
+        const x=px(p); ctx.fillStyle=c.surface; ctx.strokeStyle=color; ctx.lineWidth=2;
+        ctx.fillRect(x-15,y-12,30,23); ctx.strokeRect(x-15,y-12,30,23);
+        for (const offset of [-9,9]) {ctx.beginPath();ctx.arc(x+offset,y+16,4,0,2*Math.PI);ctx.fillStyle=color;ctx.fill();}
+        const end=x+v*arrowScale; ctx.beginPath();ctx.moveTo(x,y-22);ctx.lineTo(end,y-22);ctx.stroke();
+        if(Math.abs(v)>0.02){ctx.beginPath();ctx.moveTo(end-Math.sign(v)*5,y-26);ctx.lineTo(end,y-22);ctx.lineTo(end-Math.sign(v)*5,y-18);ctx.stroke();}
+      }
+      ctx.strokeStyle=c.muted;ctx.setLineDash([3,4]);ctx.beginPath();ctx.moveTo(px(s.p),85);ctx.lineTo(px(s.p),172);ctx.stroke();ctx.setLineDash([]);
+      ctx.strokeStyle=c.accent;ctx.beginPath();ctx.moveTo(px(s.ph),115);ctx.lineTo(px(s.p),115);ctx.stroke();
+      ctx.fillStyle=c.muted;ctx.textAlign='center';
+      for(let i=0;i<=4;i++){const p=lo+(hi-lo)*i/4;ctx.fillText(`${p.toFixed(1)} m`,px(p),192);}
+      const box={x:45,y:228,w:width-65,h:120};
+      const {x,y}=panel(ctx,box,[0,6],[Math.min(...velocities)-0.2,Math.max(...velocities)+0.2],'velocity (m/s)');
+      ctx.strokeStyle=c.fg;ctx.lineWidth=1.5;ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(x(0),y(s.v));ctx.lineTo(x(6),y(s.v));ctx.stroke();ctx.setLineDash([]);
+      ctx.strokeStyle=c.accent;ctx.lineWidth=2.5;ctx.beginPath();
+      const steps=Math.max(1,Math.ceil(time*100));
+      for(let i=0;i<=steps;i++){const t=time*i/steps; i?ctx.lineTo(x(t),y(state(t).vh)):ctx.moveTo(x(t),y(state(t).vh));}ctx.stroke();
+      ctx.fillStyle=c.muted;ctx.textAlign='center';for(let t=0;t<=6;t+=2)ctx.fillText(`${t} s`,x(t),367);
+      slider.value=String(time);root.querySelector('[data-time-out]')!.textContent=`${time.toFixed(2)} s`;
+      status.textContent=`Position residual: ${s.residual.toFixed(3)} m · Estimated velocity: ${s.vh.toFixed(3)} m/s · Velocity error: ${(s.v-s.vh).toFixed(3)} m/s`;
+    };
+    const tick=(now:number)=>{if(!running)return;time=Math.min(6,time+Math.min((now-last)/1000,0.05));last=now;draw();if(time>=6)stop();else frame=requestAnimationFrame(tick);};
+    play.addEventListener('click',()=>{if(running){stop();return;}if(time>=6)time=0;running=true;play.textContent='pause';play.setAttribute('aria-pressed','true');last=performance.now();frame=requestAnimationFrame(tick);});
+    root.querySelector('[data-reset]')!.addEventListener('click',()=>{stop();time=0;draw();});
+    slider.addEventListener('input',()=>{stop();time=Number(slider.value);draw();});
+    parameters.forEach(input=>input.addEventListener('input',()=>{
+      stop(); input.nextElementSibling!.textContent=Number(input.value).toFixed(1); draw();
+    }));
+    document.addEventListener('visibilitychange',()=>{if(document.hidden)stop();});
+    redrawOn(canvas,draw);
+  }
+</script>
+
+<style>
+  .cart-parameters { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:0.8rem; margin-bottom:1rem; }
+  fieldset { border:1px solid var(--line); border-radius:6px; margin:0; padding:0.7rem; min-width:0; }
+  legend { font:0.75rem var(--mono); color:var(--muted); padding:0 0.3rem; }
+  .cart-parameters label { display:flex; flex-wrap:wrap; margin:0.4rem 0; }
+  .cart-parameters input { width:6rem; flex:1; min-width:4rem; }
+  .cart-parameters output { min-width:2.2rem; }
+</style>

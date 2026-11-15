@@ -1,0 +1,310 @@
+---
+title: Luenberger observer
+updated: 2026-11-14
+order: 1
+draft: false
+---
+
+import CartObserver from '../../../components/estimation/CartObserver.astro';
+import CartSetup from '../../../components/estimation/CartSetup.astro';
+
+Suppose we want to control the velocity of a motor-driven cart. Our controller needs its current
+velocity to compare against the desired one, but our sensor measures only position. We could
+estimate velocity by subtracting consecutive position readings and dividing by the time between
+them. Unfortunately, this also amplifies measurement noise.
+
+We also have a model. Given an estimated state and the input applied to the cart, it predicts how
+the cart will move. This gives us two complementary sources of information: the (imperfect) model which predicts
+motion, while sensor measurements reveal when that prediction is wrong. An **observer** combines them,
+into a better estimate than either can provide individually.
+
+One might ask - how can a model be wrong? Indeed, the model for a cart is pretty simple. One easy example is 
+if the moving cart is traversing rocky terrain, where wheels may slip and the acceleration applied to the wheels
+is hence not the acceleration that the cart would experience along the ground.
+
+Let’s formalize the example. The controller sends an acceleration command $u$ to the motor drive. We
+assume the drive produces the force $F=mu$, so $\dot v=u$. The sensor reports position, $y=p$. The
+observer receives both $u$ and $y$, and estimates velocity for the controller.
+
+Play the cart below and adjust the command to accelerate or brake. Here you supply $u$ manually to
+explore the controller's input to the plant.
+
+<CartSetup />
+
+## Scalar Observer
+
+Ignoring friction, our cart obeys
+
+$$
+\dot p=v, \qquad \dot v=u, \qquad y=p.
+$$
+
+Position changes at the cart's velocity, and velocity changes at the commanded acceleration. The
+observer runs a copy of these rules with its own estimates:
+
+$$
+\dot{\hat p}=\hat v, \qquad \dot{\hat v}=u.
+$$
+
+A hat means “our estimate of.” Knowing the acceleration tells us how velocity changes, but does
+not tell us its starting value. We must initialize $\hat v$ with a guess. Likewise, we initialize
+$\hat p$, perhaps using the first position reading.
+
+Suppose the cart is moving at $1\,\mathrm{m/s}$, but we initially guess that it is stationary. With
+$u=0$, the model keeps predicting zero velocity and a fixed position, while the real cart moves
+away.
+
+### Correcting position
+
+The position sensor reports $y$, and our predicted sensor reading from the model is $\hat p$. Their difference
+
+$$
+r=y-\hat p
+$$
+
+is the **residual** (also known as the **innovation**). A positive residual means the cart is farther forward than we predicted.
+We can use it to correct the position estimate:
+
+$$
+\dot{\hat p}=\hat v+\ell_p r.
+$$
+
+The model term $\hat v$ predicts motion and the correction $\ell_p r$ pulls the estimate toward the
+measurement proportionally to the disagreement between them. The gain $\ell_p$ determines how strongly we respond.
+
+Correcting position alone leaves our velocity guess unchanged. In our example, that guess is zero,
+so the position correction must keep dragging the estimate forward to follow the cart. To predict
+its motion correctly, we need to estimate velocity too. But what can a position residual actually
+tell us about velocity?
+
+### Correcting velocity
+
+Recall that we have a position sensor that we can fuse with our position model to predict a better position
+than either could supply individually. However, in order for the model to be effective, we cannot assume constant
+velocity, since that is wrong. We should estimate it, but how do we do it with only a position sensor?
+
+A single position residual cannot tell us whether our position estimate, velocity estimate, or
+both are wrong. If the cart is one meter ahead of our prediction, it might simply have started one
+meter farther forward. That measurement alone does not imply that it is moving faster than our model predicts.
+
+The distinction appears over time. For a moment, consider the model running **without measurement
+corrections**, with $u=0$. Its position error is
+
+$$
+p(t)-\hat p(t)
+=\underbrace{p(0)-\hat p(0)}_{\text{initial position error}}
++t\,\underbrace{\bigl(v(0)-\hat v(0)\bigr)}_{\text{initial velocity error}}.
+$$
+
+If the initial position is wrong but velocity is right, the offset stays constant. If velocity is
+wrong, the offset grows or shrinks. For example, starting one meter behind produces a constant
+one-meter discrepancy; underestimating velocity by $1\,\mathrm{m/s}$ produces another meter of
+discrepancy every second. A sequence of position measurements can distinguish these cases even
+though one measurement cannot.
+
+How do we use this information without directly differentiating noisy position readings? We let the
+position residual gradually adjust the velocity estimate as well:
+
+$$
+\dot{\hat v}=u+\ell_v r.
+$$
+
+For a positive gain $\ell_v$, a positive residual nudges the velocity estimate upward. This is a
+**provisional correction**, not necessarily a conclusion that the velocity is wrong. The observer also
+corrects position, then compares its revised prediction against subsequent measurements. Its two
+estimates carry the effects of earlier readings forward, so the correction uses a history of
+measurements even though only the current residual appears explicitly in the equation.
+
+If only the initial position was wrong, this rule can temporarily push the velocity estimate away
+from its true value, but later residuals undo that adjustment. With suitable gains, errors in both estimated position and velocity decay;
+
+Also, note the units. We are correcting $\dot{\hat v}$, an acceleration, so $\ell_v$ has units of
+$\mathrm{s}^{-2}$. Multiplying it by the position residual in meters gives $\mathrm{m/s^2}$.
+
+Together, the two rules form our **Luenberger observer**:
+
+$$
+\begin{aligned}
+\dot{\hat p}&=\hat v+\ell_p(y-\hat p),\\
+\dot{\hat v}&=u+\ell_v(y-\hat p).
+\end{aligned}
+$$
+
+One residual now affects two estimates. How can we tell whether these corrections actually make
+the errors disappear? Define $e_p=p-\hat p$ and $e_v=v-\hat v$. With an exact model and noiseless
+position measurements, subtracting the observer equations from the physical equations gives
+
+$$
+\dot e_p=e_v-\ell_p e_p,\qquad \dot e_v=-\ell_v e_p.
+$$
+
+### Error Dynamics
+
+These equations let us check convergence to the true state directly. Let's differentiate the position-error equation,
+then substitute the velocity-error equation:
+
+$$
+\ddot e_p=\dot e_v-\ell_p\dot e_p
+=-\ell_v e_p-\ell_p\dot e_p.
+$$
+
+Rearrange it:
+
+$$
+\boxed{\ddot e_p+\ell_p\dot e_p+\ell_v e_p=0.}
+$$
+
+This has the same form as a damped mass–spring system, with position error playing the role of
+spring displacement. We can verify the decay algebraically. As with the mass-spring damper, let's try a solution $e_p(t)=ce^{st}$. Substitution gives
+
+$$
+s^2+\ell_p s+\ell_v=0,\qquad
+s_{1,2}=\frac{-\ell_p\pm\sqrt{\ell_p^2-4\ell_v}}{2}.
+$$
+
+When both gains are positive, both roots have negative real parts. If the square root is
+imaginary, their real part is $-\ell_p/2<0$. If it is real, it is smaller than $\ell_p$, so even
+the root with the plus sign is negative. Thus every exponential mode decays.
+
+For a concrete choice, let $\ell_p=5\,\mathrm{s}^{-1}$ and
+$\ell_v=6\,\mathrm{s}^{-2}$. The roots are $-2$ and $-3\,\mathrm{s}^{-1}$, so, with time in seconds,
+
+$$
+e_p(t)=c_1e^{-2t}+c_2e^{-3t}.
+$$
+
+The constants $c_1$ and $c_2$ depend on our initial errors. Whatever those constants are, both
+terms go to zero. This establishes position convergence, but we still need to check velocity.
+Rearrange the first error equation:
+
+$$
+e_v=\dot e_p+\ell_p e_p.
+$$
+
+For our chosen gains, substituting the position-error solution gives
+
+$$
+e_v(t)=3c_1e^{-2t}+2c_2e^{-3t},
+$$
+
+where the coefficients 3 and 2 have units of inverse seconds. Velocity error is made of the same
+decaying modes, so it also goes to zero. More generally, the decaying solutions above make both
+$e_p$ and $\dot e_p$ vanish, and hence make $e_v$ vanish.
+
+### Measurement Noise
+
+If the position sensor reports $y=p+n$, where $n$ is noise, the error equations become
+
+$$
+\dot e_p=e_v-\ell_p e_p-\ell_p n,\qquad
+\dot e_v=-\ell_v e_p-\ell_v n.
+$$
+
+Larger gains can speed up convergence, but also feed measurement noise more strongly into both
+estimates. We want errors to disappear at a useful rate without making the estimates too noisy, 
+and how much noise we're willing to accept in the estimate versus how quick the observer is to 
+converge to the correct estimate as a tuning parameter. 
+
+For example, if the controller uses the estimate to control the vehicle, then an excessively 
+noisy estimate will result in the vehicle motion being unacceptably jerky.
+
+## Matrix Form
+
+Stacking the equations makes their structure visible:
+
+$$
+x=\begin{bmatrix}p\\v\end{bmatrix},\quad
+A=\begin{bmatrix}0&1\\0&0\end{bmatrix},\quad
+B=\begin{bmatrix}0\\1\end{bmatrix},\quad
+C=\begin{bmatrix}1&0\end{bmatrix},\quad
+L=\begin{bmatrix}\ell_p\\\ell_v\end{bmatrix}.
+$$
+
+Then the system and observer become
+
+$$
+\dot x=Ax+Bu,\quad y=Cx,\qquad
+\boxed{\dot{\hat x}=A\hat x+Bu+L(y-C\hat x).}
+$$
+
+$A$ couples velocity into position. $C$ selects the quantity our sensor sees. $L$ distributes one
+sensor residual across two state corrections.
+
+For $n$ states and $m$ sensor outputs, $A$ is $n\times n$, $C$ is $m\times n$, and $L$ is $n\times
+m$. Each column of $L$ describes how one sensor residual affects every state.
+
+### Choosing the error dynamics
+
+Collect the errors into $e=[e_p,e_v]^\top$. With an exact model and noiseless measurements,
+
+$$
+\dot e=(A-LC)e.
+$$
+
+The eigenvalues of $A-LC$ are the observer's **error poles**. For the cart,
+
+$$
+A-LC=\begin{bmatrix}-\ell_p&1\\-\ell_v&0\end{bmatrix},\qquad
+\det\bigl(sI-(A-LC)\bigr)=s^2+\ell_p s+\ell_v.
+$$
+
+To choose poles at $-2$ and $-3\,\mathrm{s}^{-1}$, match this polynomial to $(s+2)(s+3)=s^2+5s+6$.
+Thus $\ell_p=5\,\mathrm{s}^{-1}$ and $\ell_v=6\,\mathrm{s}^{-2}$. Both position and velocity errors
+decay, even though velocity is never directly measured.
+
+### Simulation
+
+Now that we've done all of the hard math for our cart, let's simulate it! Choose starting positions
+and velocities for the cart and observer, and adjust both gains. The defaults use the example above.
+Only position is measured; true velocity is shown for comparison and is never given to the observer.
+No acceleration is applied in this simulation.
+
+Press **play** or scrub the time slider. Changing a parameter pauses playback and recalculates the
+trajectory from your initial conditions at the selected time. **Reset** returns to time zero with
+your settings. Plot scales adapt to the full trajectory and remain fixed during playback.
+
+Things to try:
+
+- Set the initial estimated velocity equal to the real velocity, but start at the wrong position.
+  Watch the velocity estimate temporarily move away from the truth before both errors decay.
+- Match the starting positions but choose different velocities. A position residual develops even
+  though the carts initially overlap, and it drives a velocity correction.
+- Set $\ell_v=0$. Position corrections alone cannot fix an incorrect velocity estimate.
+- Set $\ell_p=0$ with $\ell_v>0$. Errors oscillate without damping. Raise $\ell_p$ to make them decay.
+- Try $\ell_p=4$, $\ell_v=4$ for repeated error poles, then lower $\ell_p$ to see oscillatory
+  convergence. Try negative starting velocities too; the equations work in either direction.
+
+<CartObserver />
+
+## Observability and Detectability
+
+An observer cannot recover arbitrary hidden quantities just because we add them to a vector. The
+measurements over time must contain information about them.
+
+For the cart with no acceleration, $p(t)=p(0)+tv(0)$. Two noiseless position readings at distinct
+times determine both the initial position and velocity. The system is **observable**. The matrix
+test expresses the same fact:
+
+$$
+\mathcal O=\begin{bmatrix}C\\CA\end{bmatrix}
+=\begin{bmatrix}1&0\\0&1\end{bmatrix}.
+$$
+
+Its rank is two, so neither state direction is hidden. In an $n$-state linear time-invariant system,
+stack $C,CA,\ldots,CA^{n-1}$ and check for rank $n$. Observability permits arbitrary observer pole
+placement.
+
+If we measured only velocity, $C=\begin{bmatrix}0&1\end{bmatrix}$, adding a constant to the cart's
+position would never change any reading. Absolute position is unobservable, and its error cannot be
+corrected by this sensor. More generally, a convergent observer needs **detectability**: any
+unobservable modes must already decay on their own.
+
+## How to choose a gain?
+
+The Luenberger observer gives us a reusable structure - predict from a model, compare predicted and actual
+measurements, and feed the residual back into the estimate. We choose $L$ to get useful error
+dynamics. This is a powerful structure, but the gain we choose and the observer dynamics implied
+by it are somewhat arbitrary - we have no notion of whether the estimate we produce is optimal.
+
+In the next note, we will explore the Kalman Filter, which defines what optimal means 
+for our observer and how we can automatically compute the optimal gain for our observer.

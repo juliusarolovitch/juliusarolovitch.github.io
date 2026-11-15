@@ -1,0 +1,105 @@
+<figure class="viz" data-rotating-arrow>
+  <div class="viz-controls">
+    <div class="viz-seg"><button type="button" data-play aria-pressed="false">Play</button></div>
+    <label>Time <input data-time type="range" min="0" max="12" step="0.01" value="1" /><output data-readout>1.00 s</output></label>
+    <div class="viz-seg"><button type="button" data-decay aria-pressed="false">Shrink the arrow</button></div>
+  </div>
+  <svg viewBox="0 0 640 470" role="img" aria-label="A rotating arrow projects onto a horizontal track. The matching point on the graph below shows its horizontal position over time.">
+    <text x="320" y="22" text-anchor="middle">A turning arrow</text>
+    <circle cx="320" cy="132" r="82" class="guide" />
+    <path d="M218 132H422 M320 34V230" class="guide" />
+    <path data-trail class="trail" />
+    <path data-arrow class="arrow" />
+    <path data-head class="arrow" />
+    <circle data-tip r="5" class="tip" />
+    <path data-projection class="projection" />
+    <path d="M238 252H402" class="guide" />
+    <circle data-shadow cy="252" r="7" class="dot" />
+    <text x="320" y="280" text-anchor="middle">Its horizontal position moves back and forth</text>
+    <text x="52" y="315">Horizontal position over time</text>
+    <path d="M52 330V436 M52 383H600" class="guide" />
+    <text x="42" y="340" text-anchor="end">1</text>
+    <text x="42" y="387" text-anchor="end">0</text>
+    <text x="42" y="434" text-anchor="end">−1</text>
+    <path data-wave class="wave" />
+    <path data-cursor class="projection" />
+    <circle data-point r="6" class="dot" />
+    <text x="52" y="458">0 s</text><text x="600" y="458" text-anchor="end">12 s</text>
+  </svg>
+</figure>
+
+<style>
+  svg { display: block; width: 100%; height: auto; overflow: visible; }
+  text { fill: var(--muted); font: 14px var(--sans, sans-serif); }
+  path, circle { fill: none; }
+  .guide { stroke: var(--line); stroke-width: 1.5; }
+  .arrow { stroke: var(--fg); stroke-width: 3; stroke-linecap: round; }
+  .tip { fill: var(--fg); }
+  .projection { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 4 4; }
+  .dot { fill: var(--accent); }
+  .wave { stroke: var(--accent); stroke-width: 2.5; }
+  .trail { stroke: var(--muted); stroke-width: 1.5; opacity: 0.5; }
+</style>
+
+<script>
+  for (const root of document.querySelectorAll<HTMLElement>('[data-rotating-arrow]')) {
+    const slider = root.querySelector<HTMLInputElement>('[data-time]')!;
+    const decay = root.querySelector<HTMLButtonElement>('[data-decay]')!;
+    const play = root.querySelector<HTMLButtonElement>('[data-play]')!;
+    const set = (selector: string, attrs: Record<string, number | string>) => {
+      const el = root.querySelector(selector)!;
+      for (const [name, value] of Object.entries(attrs)) el.setAttribute(name, String(value));
+    };
+    const position = (t: number) => {
+      const radius = decay.getAttribute('aria-pressed') === 'true' ? Math.exp(-0.15 * t) : 1;
+      return [radius * Math.cos(t), radius * Math.sin(t)];
+    };
+    const draw = () => {
+      const t = Number(slider.value);
+      const [x, y] = position(t);
+      const px = 320 + 82 * x, py = 132 - 82 * y;
+      const angle = Math.atan2(py - 132, px - 320);
+      set('[data-arrow]', { d: `M320 132L${px} ${py}` });
+      set('[data-head]', { d: `M${px - 10 * Math.cos(angle - 0.4)} ${py - 10 * Math.sin(angle - 0.4)}L${px} ${py}L${px - 10 * Math.cos(angle + 0.4)} ${py - 10 * Math.sin(angle + 0.4)}` });
+      set('[data-tip]', { cx: px, cy: py });
+      set('[data-projection]', { d: `M${px} ${py}V252` });
+      set('[data-shadow]', { cx: px });
+      const graphX = 52 + 548 * t / 12;
+      set('[data-cursor]', { d: `M${graphX} 330V436` });
+      set('[data-point]', { cx: graphX, cy: 383 - 47 * x });
+      let wave = '', trail = '';
+      for (let i = 0; i <= 360; i++) {
+        const tt = 12 * i / 360;
+        const [xx, yy] = position(tt);
+        wave += `${i ? 'L' : 'M'}${52 + 548 * tt / 12} ${383 - 47 * xx}`;
+        if (tt <= t) trail += `${i ? 'L' : 'M'}${320 + 82 * xx} ${132 - 82 * yy}`;
+      }
+      set('[data-wave]', { d: wave });
+      set('[data-trail]', { d: trail });
+      root.querySelector<HTMLOutputElement>('[data-readout]')!.value = `${t.toFixed(2)} s`;
+    };
+    let running = false, frame = 0, previous = 0;
+    const stop = () => { running = false; cancelAnimationFrame(frame); play.textContent = 'Play'; play.setAttribute('aria-pressed', 'false'); };
+    const tick = (stamp: number) => {
+      if (!running) return;
+      const next = Math.min(12, Number(slider.value) + Math.min((stamp - previous) / 1000, 0.1));
+      previous = stamp;
+      slider.value = String(next);
+      draw();
+      if (next >= 12) stop(); else frame = requestAnimationFrame(tick);
+    };
+    play.addEventListener('click', () => {
+      if (running) return stop();
+      if (Number(slider.value) >= 12) slider.value = '0';
+      running = true; play.textContent = 'Pause'; play.setAttribute('aria-pressed', 'true'); previous = performance.now(); frame = requestAnimationFrame(tick);
+    });
+    slider.addEventListener('input', () => { stop(); draw(); });
+    decay.addEventListener('click', () => {
+      decay.setAttribute('aria-pressed', String(decay.getAttribute('aria-pressed') !== 'true'));
+      draw();
+    });
+    document.addEventListener('visibilitychange', () => { if (document.hidden) stop(); });
+    new IntersectionObserver(([entry]) => { if (!entry.isIntersecting) stop(); }).observe(root);
+    draw();
+  }
+</script>

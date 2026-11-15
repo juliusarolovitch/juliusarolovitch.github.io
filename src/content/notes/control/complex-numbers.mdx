@@ -5,12 +5,20 @@ order: 2
 draft: false
 ---
 
+import RotatingArrow from '../../../components/control/RotatingArrow.astro';
 import ComplexRate from '../../../components/control/ComplexRate.astro';
 import QuarterTurn from '../../../components/control/QuarterTurn.astro';
 import UnitCircle from '../../../components/control/UnitCircle.astro';
 import EulerSeries from '../../../components/control/EulerSeries.astro';
 
-In [modes](/notes/control/modes/), one oscillation turned out to need two numbers - a size and a place in its cycle - which we drew as a point turning in a plane. Call the two coordinates of the rotating point, or of the oscillator's state, $u$ and $v$.
+In [modes](/notes/control/modes/), the spring's natural rates turned out to be complex. We don't typically think of being able to visualize complex numbers, but the spring is certainly very real.
+So, where does the imaginary value come from? A real exponential can only describe growth or decay growth or decay, but the spring also oscillates. We want to describe both together.
+
+Imagine a turning arrow. Its tip's horizontal position moves back and forth like the spring. The arrow's length sets the size of the swing, and its angle tells us where we are in the cycle. If we shorten the arrow as it turns, we represent a decaying oscillation.
+
+<RotatingArrow />
+
+The horizontal position alone cannot tell us which way the tip is moving; we need the second coordinate too. Complex numbers keep both coordinates together and let multiplication rotate or scale the arrow. Let us see how that works. Call the tip's horizontal coordinate $u$ and vertical coordinate $v$.
 
 ## The imaginary unit
 
@@ -216,7 +224,7 @@ $$
 z(t)=z(0)e^{st}.
 $$
 
-The complex rate $s$ packages two real rates: $\sigma$ changes the radius, while $\omega$ changes the angle. The particular command or disturbance determines $A_0$ and $\phi$ - how strongly the mode is excited and where it begins in its cycle. The mode itself determines $\sigma$ and $\omega$ - how its envelope changes and how quickly it cycles.
+The complex rate $s$ packages two real rates: $\sigma$ changes the radius, while $\omega$ changes the angle. The initial state determines $A_0$ and $\phi$ - how strongly the mode is excited and where it begins in its cycle. A command or disturbance can change that state; while an input continues to act, we must also account for the forced response. The mode itself determines $\sigma$ and $\omega$ - how its envelope changes and how quickly it cycles.
 
 Finally, expand the compact dynamic equation $\dot z=sz$ back into real and imaginary components:
 
