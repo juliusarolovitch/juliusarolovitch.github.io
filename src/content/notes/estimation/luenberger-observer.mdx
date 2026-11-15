@@ -278,12 +278,12 @@ Things to try:
 
 ## Observability and Detectability
 
-An observer cannot recover arbitrary hidden quantities just because we add them to a vector. The
+An observer cannot recover arbitrary hidden parts of the state (like velocity in our example) just because we add them to a vector. The
 measurements over time must contain information about them.
 
 For the cart with no acceleration, $p(t)=p(0)+tv(0)$. Two noiseless position readings at distinct
-times determine both the initial position and velocity. The system is **observable**. The matrix
-test expresses the same fact:
+times determine both the initial position and velocity. The system is hence **observable**, meaning that every
+part of the state leaves a 'trace' in the sensor reading. We form the following matrix to test for Observability:
 
 $$
 \mathcal O=\begin{bmatrix}C\\CA\end{bmatrix}

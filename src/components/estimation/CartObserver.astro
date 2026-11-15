@@ -1,3 +1,8 @@
+---
+import katex from 'katex';
+const tex = (value: string) => katex.renderToString(value);
+---
+
 <figure class="viz" data-cart-observer>
   <div class="viz-controls">
     <div class="viz-seg"><button type="button" data-play aria-pressed="false">play</button><button type="button" data-reset>reset</button></div>
@@ -13,8 +18,8 @@
       <label>Velocity (m/s) <input data-param="vh" aria-label="Initial estimated velocity" type="range" min="-2" max="2" step="0.1" value="0" /><output>0.0</output></label>
     </fieldset>
     <fieldset><legend>Observer gains</legend>
-      <label>ℓp (1/s) <input data-param="lp" aria-label="Position gain" type="range" min="0" max="10" step="0.1" value="5" /><output>5.0</output></label>
-      <label>ℓv (1/s²) <input data-param="lv" aria-label="Velocity gain" type="range" min="0" max="15" step="0.1" value="6" /><output>6.0</output></label>
+      <label><Fragment set:html={tex(String.raw`\ell_p\;(\mathrm{s}^{-1})`)} /> <input data-param="lp" aria-label="Position gain" type="range" min="0" max="10" step="0.1" value="5" /><output>5.0</output></label>
+      <label><Fragment set:html={tex(String.raw`\ell_v\;(\mathrm{s}^{-2})`)} /> <input data-param="lv" aria-label="Velocity gain" type="range" min="0" max="15" step="0.1" value="6" /><output>6.0</output></label>
     </fieldset>
   </div>
   <canvas role="img" aria-label="Real and estimated carts on parallel tracks, with position residual and velocity estimates over time"></canvas>
