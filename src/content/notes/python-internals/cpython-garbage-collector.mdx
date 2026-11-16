@@ -39,7 +39,7 @@ Below we will go into depth regarding the second mechanism.
 
 Only objects that can hold references to other objects can be part of a loop, so only those are **tracked**: lists, dicts, sets, tuples, class instances, functions, modules, frames and similar containers. Plain values such as `int`, `float`, `str` and `bytes` are never tracked. CPython also stops tracking dicts and tuples that hold only plain values.
 
-In a typical scientific or robotics service, most tracked objects come from imports - numpy, scipy, OpenCV, gRPC, protobuf. A few hundred thousand of them is normal, and they live as long as the process does. Large native buffers, such as numpy arrays' data, are not traversed by the cyclic collector; whether their Python wrappers are tracked depends on the type.
+In a typical scientific or robotics service, most tracked objects come from large imported libraries such as numpy, scipy, or opencv. A few hundred thousand of them is normal, and they live as long as the process does. Large native buffers, such as numpy arrays' data, are not traversed by the cyclic collector; whether their Python wrappers are tracked depends on the type.
 
 ## How does the garbage collector find garbage?
 
