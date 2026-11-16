@@ -10,6 +10,8 @@ import GcSimulator from '../../../components/python/GcSimulator.astro';
 import GilStall from '../../../components/python/GilStall.astro';
 import GcStallTrace from '../../../components/python/GcStallTrace.astro';
 
+In this note, I explain my adventures with the CPython garbage collector. This note was taken from my handwritten notes and transposed+edited by Claude.
+
 Most of the time, we never think about how Python frees memory. That changes in large Python services, which can suffer seemingly random stalls of tens to hundreds of milliseconds. In safety-critical applications this matters (though safety-critical software arguably shouldn't be written in Python :) ). I've run into this problem twice in my career, on two entirely different systems. It's a pain to debug, and usually the only way to find it is by process of elimination. If that sounds familiar, the cause may be the CPython garbage collector.
 
 This note introduces Python's memory model and covers what to know if you have the misfortune of building large Python applications.
