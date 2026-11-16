@@ -1,0 +1,542 @@
+---
+title: Useful definitions
+updated: 2026-11-16
+order: 0
+draft: false
+---
+
+import Aka from '../../../components/rl/Aka.astro';
+
+This page collects useful definitions and terms commonly used in reinforcement learning literature, written with assistance from Claude.
+
+## 1. The problem
+
+### Markov decision process
+
+A **Markov decision process** (MDP) is the tuple $\mathcal{M} = (\mathcal{S}, \mathcal{A}, P, R, \rho_0, \gamma)$:
+
+- $\mathcal{S}$ is the **state space**.
+  A state $s \in \mathcal{S}$ is everything the agent needs to know about the world to predict what happens next.
+- $\mathcal{A}$ is the **action space**.
+  An action $a \in \mathcal{A}$ is what the agent chooses.
+  It is **discrete** if it is a finite set (left, right, fire) and **continuous** if it is a subset of $\mathbb{R}^m$ (motor torques).
+- $P(s' \mid s, a)$ is the **transition kernel**: the probability (or density) of landing in $s'$ after taking $a$ in $s$.
+- $R(s, a, s')$ is the **reward function**.
+  It returns a scalar.
+  We write $R_t$ for the reward received at step $t$.
+- $\rho_0(s)$ is the **initial state distribution**.
+- $\gamma \in [0, 1)$ is the **discount factor**.
+  It makes a reward $k$ steps in the future worth $\gamma^k$ times a reward now.
+
+<Aka>
+
+The tuple is often shortened to $(\mathcal{S}, \mathcal{A}, P, R, \gamma)$.
+The transition kernel is also written $T(s' \mid s, a)$, $p(s' \mid s, a)$ or $\mathcal{P}^a_{ss'}$,
+and called the **dynamics** or **transition function**.
+The reward function is also written $r(s, a)$ or $\mathcal{R}(s, a)$, often without $s'$.
+The initial distribution is also $\mu$, $d_0$ or $p_0$.
+In control texts, the state is $x$ and the action is $u$,
+and reward is replaced by a **cost** $c$ or $\ell$ to be minimized.
+
+</Aka>
+
+The word **Markov** means that $P$ and $R$ depend only on the current $s$ and $a$, not on the history before them.
+If the agent only sees an observation $o$ that does not contain the full state,
+the problem is a **partially observable Markov decision process** (POMDP).
+
+
+### Steps, episodes, trajectories
+
+At each **time step** $t$, the agent sees $s_t$, picks $a_t$,
+and the environment returns $R_t$ and $s_{t+1} \sim P(\cdot \mid s_t, a_t)$.
+
+A **trajectory** is the sequence
+
+$$
+\tau = (s_0, a_0, R_0, s_1, a_1, R_1, \ldots).
+$$
+
+<Aka>
+
+Rollout, path, or (for a complete one) episode.
+
+</Aka>
+
+An **episode** is a trajectory that ends at a **terminal state**, after $T$ steps.
+Tasks with episodes are **episodic**.
+Tasks that never end are **continuing**.
+
+<Aka>
+
+$T$ is also written $H$ and called the **horizon**.
+A finite-horizon Markov decision process has a fixed $H$ and often no discount.
+
+</Aka>
+
+Episodes typically end for one of two reasons:
+- **Termination**: the Markov decision process itself reaches a terminal state (the robot fell over, the goal was reached).
+  No future reward exists after this state.
+- **Truncation**: we stopped the episode for some reason, such as a time limit.
+  The Markov decision process did not end, so future reward still exists.
+
+<Aka>
+
+Papers usually write a termination flag $d_t$ or $\text{done}_t$, equal to $1$ at a terminal state.
+
+</Aka>
+
+### Reward, return and value
+
+Three quantities are easy to confuse:
+
+- The **reward** $R_t$ is the signal from **one** step. It says how good the last transition was.
+- The **return** $G_t$ is the discounted sum of all rewards from step $t$ on, in one particular trajectory.
+  It is a random variable.
+- The **value** $V^\pi(s)$ is the **expected** return.
+  It averages the return over every way the future can unfold.
+  (and is defined in the next section)
+
+The return is
+
+$$
+G_t = \sum_{k=0}^{\infty} \gamma^k R_{t+k} = R_t + \gamma G_{t+1}.
+$$
+
+The second form is the recursion that most of reinforcement learning is built on.
+The **effective horizon** is about $1/(1-\gamma)$ steps.
+
+<Aka>
+
+The return is written $G_t$ (Sutton and Barto), $R_t$ (older papers, where it clashes with the reward),
+$R(\tau)$ for a whole trajectory, and $\hat R_t$ when it is an estimate.
+It is also called the **reward-to-go**, **cumulative reward** or **discounted return**.
+The undiscounted sum is the **episode return**, which is what training curves usually plot,
+even when the algorithm optimizes the discounted one.
+
+</Aka>
+
+### Policy
+
+A **policy** chooses actions.
+
+- A **stochastic policy** $\pi(a \mid s)$ is a probability distribution over actions for each state.
+- A **deterministic policy** $\mu(s)$ returns one action.
+- A **parameterized policy** $\pi_\theta$ has parameters $\theta$, usually the weights of a neural network.
+  For discrete actions the network outputs logits and a softmax turns them into probabilities.
+  For continuous actions it usually outputs the mean $\mu_\theta(s)$ and standard deviation $\sigma_\theta(s)$ of a Gaussian.
+
+<Aka>
+
+$\pi(s, a)$ or $\pi(a, s)$ in older texts.
+A deterministic policy is also written $\pi(s)$ or $\mu_\theta(s)$, which clashes with the Gaussian mean.
+The policy network is the **actor**.
+
+</Aka>
+
+### Objective
+
+The **objective** is the expected return from the start:
+
+$$
+J(\pi) = \mathbb{E}_{\tau \sim \pi}\big[G_0\big],
+$$
+
+where $\tau \sim \pi$ means $s_0 \sim \rho_0$, $a_t \sim \pi(\cdot \mid s_t)$ and $s_{t+1} \sim P(\cdot \mid s_t, a_t)$.
+An **optimal policy** $\pi^*$ maximizes $J$.
+
+<Aka>
+
+$J(\theta)$ or $J(\pi_\theta)$ for a parameterized policy, $\eta(\pi)$ (the trust region policy optimization paper),
+and **expected return** or **performance**.
+Since $J(\pi) = \mathbb{E}_{s_0 \sim \rho_0}[V^\pi(s_0)]$,
+some texts write it as $V^\pi(\rho_0)$ or $v_{\pi_\theta}(s_0)$.
+
+</Aka>
+
+## 2. Value functions
+
+### State value and action value
+
+The **state-value function** is the expected return when we start in $s$ and follow $\pi$:
+
+$$
+V^\pi(s) = \mathbb{E}_\pi\big[G_t \mid s_t = s\big].
+$$
+
+The **action-value function** (or **Q-function**) is the expected return when we start in $s$,
+take $a$ first, and follow $\pi$ after:
+
+$$
+Q^\pi(s, a) = \mathbb{E}_\pi\big[G_t \mid s_t = s,\, a_t = a\big].
+$$
+
+They are related by averaging over the policy's action:
+$V^\pi(s) = \mathbb{E}_{a \sim \pi(\cdot \mid s)}\big[Q^\pi(s, a)\big]$.
+
+<Aka>
+
+$v_\pi(s)$ and $q_\pi(s, a)$ (Sutton and Barto), $V_\pi$ and $Q_\pi$, or $V(s)$ and $Q(s, a)$ when the policy is clear.
+The learned approximations are $V_\phi$, $\hat v(s, \mathbf{w})$ (Sutton and Barto), $Q_\theta$ or $Q(s, a; \theta)$.
+The state value is often just called **the value**, and $Q$ the **state-action value** or **quality**.
+A network that learns either one is a **critic**, and in proximal policy optimization code it is the **value head**.
+
+</Aka>
+
+### Advantage
+
+The **advantage** says how much better $a$ is than the policy's average action in $s$:
+
+$$
+A^\pi(s, a) = Q^\pi(s, a) - V^\pi(s).
+$$
+
+By definition, $\mathbb{E}_{a \sim \pi}\big[A^\pi(s, a)\big] = 0$.
+A positive advantage means "do this more often", a negative one "do this less often".
+This is the quantity a policy gradient needs.
+
+
+### Optimal values
+
+$V^*(s) = \max_\pi V^\pi(s)$ and $Q^*(s, a) = \max_\pi Q^\pi(s, a)$.
+If we know $Q^*$, the greedy policy $\pi^*(s) = \arg\max_a Q^*(s, a)$ is optimal.
+
+<Aka>
+
+$v_*$ and $q_*$ (Sutton and Barto).
+
+</Aka>
+
+### Bellman equations
+
+Substituting $G_t = R_t + \gamma G_{t+1}$ into the definitions gives the **Bellman expectation equations**:
+
+$$
+\begin{aligned}
+V^\pi(s) &= \mathbb{E}_{a \sim \pi,\, s' \sim P}\big[R + \gamma V^\pi(s')\big],\\
+Q^\pi(s, a) &= \mathbb{E}_{s' \sim P}\Big[R + \gamma\, \mathbb{E}_{a' \sim \pi(\cdot \mid s')}\big[Q^\pi(s', a')\big]\Big].
+\end{aligned}
+$$
+
+For the optimal values, the average over $\pi$ is replaced by a max.
+These are the **Bellman optimality equations**:
+
+$$
+Q^*(s, a) = \mathbb{E}_{s' \sim P}\Big[R + \gamma \max_{a'} Q^*(s', a')\Big].
+$$
+
+Notice that for the $Q^\pi$ equation, we only need a transition $(s, a, R, s')$ from the environment and a sample $a' \sim \pi(\cdot \mid s')$, both of which we can draw ourselves.
+The transition can come from any policy. This is why Q-learning can be done off-policy (defined below) and the quality of the learned function scales how representative the samples are.
+
+### Discounted state distribution
+
+$d^\pi(s)$ is the **discounted state-visitation distribution**, which represents how often $\pi$ visits $s$,
+with later visits weighted down by $\gamma^t$:
+
+$$
+d^\pi(s) = (1-\gamma) \sum_{t=0}^{\infty} \gamma^t \Pr(s_t = s \mid \pi).
+$$
+
+The factor $1-\gamma$ makes it sum to one, and we sample from it by running the policy and counting the states it visits.
+
+<Aka>
+
+$\rho^\pi$ or $\rho_\pi$ (the trust region policy optimization and soft actor-critic papers, often without the $1-\gamma$ factor),
+$\mu(s)$ (Sutton and Barto, the on-policy distribution), **occupancy measure** (often over state-action pairs,
+$d^\pi(s, a)$), or **state marginal**.
+
+</Aka>
+
+## 3. Learning value functions
+
+### Bootstrapping and targets
+
+To fit an estimate $V_\phi$ (a network with parameters $\phi$), we regress it onto a **target**.
+Two kinds of target exist:
+
+- **Monte Carlo** (MC): use the observed return $G_t$.
+  It is **unbiased** but has **high variance**, since it adds up the randomness of every future step.
+- **Temporal difference** (TD): use $R_t + \gamma V_\phi(s_{t+1})$.
+  It uses our own estimate of the future in place of the real future.
+  This is called **bootstrapping**.
+  It has **low variance** but it is **biased** while $V_\phi$ is wrong.
+
+### Temporal-difference error
+
+The **temporal-difference error** is used to evaluate the consistency of the learned value function and is expressed as:
+
+$$
+\delta_t = R_t + \gamma V(s_{t+1}) - V(s_t).
+$$
+
+If $V = V^\pi$, then $\mathbb{E}[\delta_t \mid s_t, a_t] = A^\pi(s_t, a_t)$.
+So $\delta_t$ is a one-step, one-sample estimate of the advantage.
+
+<Aka>
+
+**temporal-difference residual** (the generalized advantage estimation paper, written $\delta_t^V$),
+**one-step advantage**, or Bellman error of a single sample.
+
+</Aka>
+
+### $n$-step returns
+
+Between the two extremes, the **$n$-step return** uses $n$ real rewards and then bootstraps:
+
+$$
+G_t^{(n)} = R_t + \gamma R_{t+1} + \cdots + \gamma^{n-1} R_{t+n-1} + \gamma^n V(s_{t+n}).
+$$
+
+$n = 1$ is the temporal-difference target and $n = \infty$ is the Monte Carlo target.
+Larger $n$ trades bias for variance.
+
+<Aka>
+
+$G_{t:t+n}$ (Sutton and Barto), $R_t^{(n)}$, or **multi-step return**.
+The exponentially weighted average of all $n$-step returns is the **$\lambda$-return** $G_t^\lambda$,
+used by temporal-difference learning with eligibility traces.
+
+</Aka>
+
+### Target networks
+
+A **target network** $\bar\phi$ is a slow copy of $\phi$ used only inside the target $R + \gamma Q_{\bar\phi}(s', a')$.
+Without it, every gradient step moves the target it chases.
+It is updated either by periodic copying or by **Polyak averaging**,
+$\bar\phi \leftarrow \tau \phi + (1-\tau)\bar\phi$ with small $\tau$ such as $0.005$.
+
+### Overestimation bias
+
+If $Q$ estimates are noisy, then $\max_a Q(s, a)$ is biased upward, since the max picks whichever action happened to have the largest positive error.
+Because the target bootstraps on this max, the bias compounds through the Bellman recursion.
+
+### The deadly triad
+
+Function approximation, bootstrapping and off-policy data are each useful.
+Combined, they can make value learning diverge.
+Target networks, double Q-learning and conservative updates exist to keep this combination stable.
+
+## 4. Families of algorithms
+
+### Model-free and model-based
+
+A **model-based** method learns or is given $P$ and $R$, and plans or generates synthetic data with them.
+A **model-free** method learns a policy or value function directly from transitions without a model.
+Proximal policy optimization and soft actor-critic are both model-free.
+
+<Aka>
+
+A learned model is a **world model** or **dynamics model**, written $\hat P$, $\hat T$ or $f_\psi$.
+
+</Aka>
+
+### Value-based, policy-based, actor-critic
+
+- **Value-based** methods learn $Q$ and act greedily with respect to it (deep Q-networks, or DQN).
+  They suit discrete actions, because $\arg\max_a$ over a continuous space is itself an optimization.
+- **Policy-based** methods (or **policy gradient** methods) adjust $\pi_\theta$ directly in the direction that increases $J$ (REINFORCE).
+- **Actor-critic** methods do both.
+  The **actor** is the policy $\pi_\theta$, while the **critic** is a learned value function $V_\phi$ or $Q_\phi$ that reduces the variance of the actor's update.
+  Proximal policy optimization and soft actor-critic are both actor-critic.
+
+<Aka>
+
+Value-based methods are also called **Q-learning methods** or, for exact tabular versions,
+**dynamic programming** (value iteration, policy iteration).
+Policy-based methods are also called **policy search** or **policy optimization**.
+
+</Aka>
+
+### Policy gradient
+
+The **policy gradient theorem** gives the gradient of $J$ without differentiating through the environment:
+
+$$
+\nabla_\theta J(\pi_\theta) = \mathbb{E}_{\tau \sim \pi_\theta}\left[\sum_{t} \gamma^t\, \nabla_\theta \log \pi_\theta(a_t \mid s_t)\, A^{\pi_\theta}(s_t, a_t)\right].
+$$
+
+The term $\nabla_\theta \log \pi_\theta(a \mid s)$ is the **score function**.
+It is the direction in parameter space that makes $a$ more likely in $s$.
+The gradient pushes up the log-probability of actions with positive advantage and pushes down those with negative advantage.
+In practice, the $\gamma^t$ factor is usually dropped, which gives a slightly biased but better-behaved estimator.
+
+The key identity behind it is the **log-derivative trick**:
+$\nabla_\theta p_\theta(x) = p_\theta(x) \nabla_\theta \log p_\theta(x)$.
+It turns the gradient of an expectation into an expectation we can sample.
+
+
+### Reparameterization gradient
+
+A second way to differentiate an expectation over actions exists when the action can be written as a differentiable function of noise:
+$a = f_\theta(s, \xi)$ with $\xi \sim \mathcal{N}(0, I)$.
+Then
+
+$$
+\nabla_\theta\, \mathbb{E}_{a \sim \pi_\theta}\big[Q(s, a)\big] = \mathbb{E}_{\xi}\big[\nabla_a Q(s, a)\, \nabla_\theta f_\theta(s, \xi)\big].
+$$
+
+This uses the gradient of $Q$ with respect to the action, so it needs a differentiable critic and continuous actions.
+It usually has much lower variance than the score-function form.
+Soft actor-critic uses it.
+
+<Aka>
+
+The **reparameterization trick**, the **pathwise derivative**.
+The noise is written $\xi$, $\epsilon$ (the soft actor-critic paper) or $\varepsilon$.
+The deterministic special case, where $a = \mu_\theta(s)$ and there is no noise,
+is the **deterministic policy gradient**.
+
+</Aka>
+
+## 5. Training
+
+### Behavior and target policy
+
+The **behavior policy** $\beta$ is the policy that collected the data.
+The **target policy** $\pi$ is the policy we are evaluating or improving.
+
+<Aka>
+
+The behavior policy is written $b$ (Sutton and Barto), $\mu$ or $\pi_\beta$.
+It is also called the **data-collection**, **logging** or **rollout** policy.
+"Target policy" has nothing to do with target networks.
+
+</Aka>
+
+### On-policy
+
+An **on-policy** method uses data only from the current policy:
+$\beta = \pi$.
+After each update the old data no longer comes from the current policy, so it is thrown away.
+On-policy methods (REINFORCE, advantage actor-critic, trust region policy optimization, proximal policy optimization) are usually stable and simple to reason about,
+but **sample inefficient** since each transition is used for only a few gradient steps.
+
+### Off-policy
+
+An **off-policy** method can learn about $\pi$ from data collected by any $\beta$,
+including old versions of $\pi$, other agents, or humans.
+It stores transitions in a **replay buffer** $\mathcal{D}$ and samples minibatches from it many times.
+Off-policy methods (deep Q-networks, soft actor-critic) are much more **sample efficient**,
+but more sensitive to hyperparameters and to the deadly triad.
+
+What makes a method off-policy is the form of its update.
+Q-function targets (see the Bellman equation above) only need $(s, a, R, s')$ and a fresh $a'$ from the current policy,
+so they are valid on any transition.
+The policy gradient is an expectation over states and actions *from $\pi$*, so it is on-policy unless corrected.
+
+<Aka>
+
+The replay buffer is also written $\mathcal{B}$ or $\mathcal{R}$, and called **experience replay** or **replay memory**.
+A transition $(s, a, R, s', d)$ is also called an **experience** or **sample**,
+and the tuple is often written $(s, a, r, s')$.
+
+</Aka>
+
+### Importance sampling
+
+**Importance sampling** reweights samples from one distribution to estimate an expectation under another:
+
+$$
+\mathbb{E}_{x \sim p}\big[f(x)\big] = \mathbb{E}_{x \sim q}\left[\frac{p(x)}{q(x)} f(x)\right].
+$$
+
+For actions, the **importance ratio** is $\pi(a \mid s) / \beta(a \mid s)$.
+It is unbiased but its variance grows fast as $\pi$ and $\beta$ separate, and ratios over many steps multiply.
+Proximal policy optimization uses a single-step ratio and keeps $\pi$ close to $\beta$ so the ratio stays near one.
+
+### Online and offline
+
+**Online** reinforcement learning interacts with the environment while it learns.
+**Offline** reinforcement learning learns from a fixed dataset and never interacts.
+Offline reinforcement learning is off-policy by necessity,
+with the extra problem that it can never collect data to check actions the dataset does not contain.
+
+
+### Training Efficiency
+
+**Sample efficiency** counts environment steps needed to reach a given performance.
+It matters most when steps are expensive, such as on a real robot.
+When a fast simulator can run thousands of environments in parallel, wall-clock time often matters more,
+and on-policy methods can be competitive or better.
+
+## 6. Exploration
+
+### Exploration and exploitation
+
+**Exploitation** picks the action currently believed best.
+**Exploration** picks other actions to learn whether they are better.
+Too little exploration converges to a poor local optimum that may not generalize well, which too much exploration is sample inefficient.
+
+### Common methods
+
+- **$\epsilon$-greedy**: with probability $\epsilon$ take a random action, otherwise the greedy one.
+  Used with discrete value-based methods.
+- **Stochastic policies**: sampling from $\pi_\theta$ explores by itself.
+  Its randomness shrinks as training sharpens the policy, sometimes too early.
+- **Entropy regularization**: add a bonus for policy randomness to the objective,
+  so the policy stays stochastic until there is a reason to commit.
+
+### Entropy
+
+The **entropy** of a policy at state $s$ measures its randomness:
+
+$$
+\mathcal{H}\big(\pi(\cdot \mid s)\big) = \mathbb{E}_{a \sim \pi(\cdot \mid s)}\big[-\log \pi(a \mid s)\big].
+$$
+
+For $n$ discrete actions it ranges from $0$ (deterministic) to $\log n$ (uniform).
+For continuous actions it is a **differential entropy**, which can be negative.
+A one-dimensional Gaussian has $\mathcal{H} = \tfrac12 \log(2\pi e \sigma^2)$,
+which is negative when $\sigma \lt 0.242$.
+
+## 7. Measuring distance between policies
+
+### Kullback-Leibler divergence
+
+The **Kullback-Leibler divergence** between two distributions is
+
+$$
+D_{\mathrm{KL}}(p \,\|\, q) = \mathbb{E}_{x \sim p}\left[\log \frac{p(x)}{q(x)}\right] \geq 0,
+$$
+
+with equality only when $p = q$, and is not symmetric.
+Between policies it is computed per state and averaged over visited states: \
+$\mathbb{E}_{s}\big[D_{\mathrm{KL}}\big(\pi_{\text{old}}(\cdot \mid s) \,\|\, \pi(\cdot \mid s)\big)\big]$.
+
+### Trust region
+
+A **trust region** is a neighborhood of the current policy, usually defined by a Kullback-Leibler divergence bound,
+within which a local approximation of $J$ is accurate.
+Limiting each update to this region prevents one bad step from destroying the policy.
+
+## 8. Training vocabulary
+
+| Term | Meaning |
+| --- | --- |
+| **Rollout length** | Relevant for on-policy methods, its the number of steps $T$ collected per environment before an update. |
+| **Batch** | All transitions used for one update, often $N$ parallel environments times $T$ steps. |
+| **Minibatch** | A random subset of the batch used for one gradient step. |
+| **Epoch** | One pass over the batch in minibatches. Proximal policy optimization runs several epochs on each batch. |
+| **Update-to-data ratio** | Relevant for off-policy methods, its the gradient steps per environment step.  |
+| **Warm-up** | Random actions before learning starts, so that the replay buffer is not filled by an untrained policy. |
+| **Deterministic evaluation** | Evaluating with the mean action instead of a sample. It usually scores higher than the stochastic policy used for training. |
+
+## Symbol Reference
+
+| Term | Symbol here | Other common symbols | Meaning |
+| --- | --- | --- | --- |
+| Reward | $R_t$ | $r_t$, $R_{t+1}$ (Sutton and Barto), $r(s, a)$ | One-step signal |
+| Return | $G_t$ | $R_t$, $R(\tau)$, $\hat R_t$ | Discounted sum of future rewards in one trajectory |
+| Policy | $\pi_\theta(a \mid s)$ | $\pi(s, a)$, $\mu_\theta(s)$ (deterministic) | Distribution over actions |
+| Objective | $J(\pi)$ | $J(\theta)$, $\eta(\pi)$ | Expected return from the start |
+| State value | $V^\pi(s)$ | $v_\pi(s)$, $V_\pi(s)$ | Expected return from $s$ |
+| Action value | $Q^\pi(s, a)$ | $q_\pi(s, a)$, $Q(s, a; \theta)$ | Expected return from $s$ after $a$ |
+| Advantage | $A^\pi(s, a)$ | $\hat A_t$, $A_\pi$ | $Q^\pi - V^\pi$ |
+| Temporal-difference error | $\delta_t$ | $\delta_t^V$ | $R_t + \gamma V(s_{t+1}) - V(s_t)$ |
+| Visitation | $d^\pi(s)$ | $\rho^\pi$, $\rho_\pi$, $\mu(s)$ | Discounted state frequency under $\pi$ |
+| Behavior policy | $\beta$ | $b$, $\mu$, $\pi_\beta$ | Policy that collected the data |
+| Importance ratio | $\pi / \beta$ | $\rho_t$, $r_t(\theta)$, $w_t$ | Reweights off-policy samples |
+| Replay buffer | $\mathcal{D}$ | $\mathcal{B}$, $\mathcal{R}$ | Stored transitions |
+| Target network | $\bar\phi$ | $\theta^-$, $\phi'$, $\phi_{\text{targ}}$ | Slow copy used in targets |
+| Entropy | $\mathcal{H}(\pi(\cdot \mid s))$ | $H(\pi)$, $S[\pi]$ | Randomness of the policy at $s$ |
+| On-policy | $\beta = \pi$ | | Data only from the current policy |
+| Off-policy | $\beta \neq \pi$ | | Data from any policy, usually a replay buffer |
