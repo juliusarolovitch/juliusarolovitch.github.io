@@ -18,7 +18,7 @@ the cart will move. This gives us two complementary sources of information: the 
 motion, while sensor measurements reveal when that prediction is wrong. An **observer** combines them,
 into a better estimate than either can provide individually.
 
-One might ask - how can a model be wrong? Indeed, the model for a cart is pretty simple. One easy example is 
+One might ask - how can a model be wrong? Indeed, the model for a cart is pretty simple. However, one easy example of error is 
 if the moving cart is traversing rocky terrain, where wheels may slip and the acceleration applied to the wheels
 is hence not the acceleration that the cart would experience along the ground.
 
@@ -210,7 +210,7 @@ noisy estimate will result in the vehicle motion being unacceptably jerky.
 
 ## Matrix Form
 
-Stacking the equations makes their structure visible:
+If we stack the equations that we have already produced, we can express the observer in matrix form:
 
 $$
 x=\begin{bmatrix}p\\v\end{bmatrix},\quad
@@ -308,3 +308,67 @@ by it are somewhat arbitrary - we have no notion of whether the estimate we prod
 
 In the next note, we will explore the Kalman Filter, which defines what optimal means 
 for our observer and how we can automatically compute the optimal gain for our observer.
+
+## Example
+
+A motor turns a shaft whose angular position we want to control. An encoder measures the shaft's
+angle $\theta$, but does not directly measure its angular speed $\omega$. The controller sends a
+voltage command $u$ to the motor drive. Define the model:
+
+$$
+\dot\theta=\omega,\qquad \dot\omega=-a\omega+bu,\qquad y=\theta,
+$$
+
+where $a=2\,\mathrm{s}^{-1}$ and $b=3\,\mathrm{rad\,s^{-2}\,V^{-1}}$. The first term in the
+speed equation models drag and back EMF; the second models the effect of the applied voltage.
+Assume the encoder reports an unwrapped angle, so there is no ambiguity between full revolutions.
+For this exercise, the model is exact and measurements are noiseless.
+
+Our goal is to estimate both angle and speed from the voltage command and angle measurements.
+Use the state $x=[\theta,\omega]^\top$ and a constant observer gain
+$L=[\ell_\theta,\ell_\omega]^\top$.
+
+**1. Define the state-space model**
+
+Write the matrices $A$, $B$, and $C$ in $\dot x=Ax+Bu$, $y=Cx$. State their dimensions and identify
+which state is directly measured and which must be inferred.
+
+**2. Construct the observer**
+
+Write a Luenberger observer for this motor in matrix form, then expand it into separate equations
+for $\dot{\hat\theta}$ and $\dot{\hat\omega}$. Define the measurement residual and give the units
+of both gains. Which information must be available to run the observer?
+
+
+**3. Find the error dynamics**
+
+Define $e=x-\hat x$. Derive the matrix governing $\dot e$ and its characteristic polynomial in
+terms of $\ell_\theta$ and $\ell_\omega$. What conditions on the gains make both estimation
+errors converge to zero for every initial error?
+
+**4. Evaluate three proposed gains**
+
+For each pair below, calculate the error poles and decide whether the estimation errors converge
+to zero from every initial condition. If they do not, explain what behavior can remain or grow.
+The first entry has units of $\mathrm{s}^{-1}$; the second has units of $\mathrm{s}^{-2}$.
+
+$$
+L_1=\begin{bmatrix}2\\2\end{bmatrix},\qquad
+L_2=\begin{bmatrix}-3\\2\end{bmatrix},\qquad
+L_3=\begin{bmatrix}1\\-2\end{bmatrix}.
+$$
+
+**5. Choose gains for a desired response**
+
+Choose $L$ so that the error poles are $-3\,\mathrm{s}^{-1}$ and $-4\,\mathrm{s}^{-1}$.
+Show how you obtain the gains, and verify them by substituting into your characteristic polynomial.
+Do these poles describe the physical motor's motion or the observer's estimation errors?
+
+**6. Test observability**
+
+Form the observability matrix for the angle encoder and find its rank. Explain physically why a
+history of angle measurements can or cannot reveal both states.
+
+Now replace the angle encoder with a sensor that measures only angular speed, $y=\omega$.
+Recalculate $C$ and the observability matrix. Which state information is lost? Is this modified
+system detectable, and can any constant observer gain make every initial estimation error decay?
