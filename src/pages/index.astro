@@ -10,7 +10,7 @@ import { byOrder, topicOf, topicLabel } from '../lib/notes';
 const trips = (await getCollection('travel', (p) => !p.data.draft)).sort((a, b) => b.data.date.valueOf() - a.data.date.valueOf());
 
 const projects = (await getCollection('projects', (p) => p.data.featured)).sort((a, b) => b.data.year - a.data.year);
-const notes = await getCollection('notes', (n) => !n.data.draft);
+const notes = await getCollection('notes', (n) => !n.data.draft && !n.data.hidden);
 const groups = new Map<string, typeof notes>();
 for (const note of notes) groups.set(topicOf(note), [...(groups.get(topicOf(note)) ?? []), note]);
 const topics = [...groups.keys()].sort();

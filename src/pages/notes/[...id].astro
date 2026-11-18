@@ -13,20 +13,21 @@ const { note, notes } = Astro.props;
 const { Content, headings } = await render(note);
 const topic = topicOf(note);
 const siblings = notes.filter((n) => topicOf(n) === topic).sort(byOrder);
-const index = siblings.findIndex((n) => n.id === note.id);
-const prev = siblings[index - 1];
-const next = siblings[index + 1];
+const pager = siblings.filter((n) => !n.data.hidden || n.id === note.id);
+const index = pager.findIndex((n) => n.id === note.id);
+const prev = pager[index - 1];
+const next = pager[index + 1];
 const toc = headings.filter((h) => h.depth === 2 || h.depth === 3);
 ---
 
-<Base title={note.data.title} description={note.data.description} wide>
+<Base title={note.data.title} description={note.data.description} wide noindex={note.data.hidden}>
   <div class="layout">
     <aside class="side">
       <a class="topic" href={`/notes/#${topic}`}>{topicLabel(topic)}</a>
       <ol>
         {
           siblings.map((n) => (
-            <li>
+            <li data-secret={(n.data.hidden && n.id !== note.id) || undefined}>
               <a href={`/notes/${n.id}/`} aria-current={n.id === note.id ? 'page' : undefined}>
                 {n.data.title}
               </a>

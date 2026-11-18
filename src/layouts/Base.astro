@@ -6,9 +6,10 @@ interface Props {
   title?: string;
   description?: string;
   wide?: boolean;
+  noindex?: boolean;
 }
 
-const { description = `${site.name}: projects and notes.`, wide = false } = Astro.props;
+const { description = `${site.name}: projects and notes.`, wide = false, noindex = false } = Astro.props;
 const path = Astro.url.pathname;
 const nav = [
   { href: '/', label: 'Home' },
@@ -25,6 +26,12 @@ const nav = [
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content={description} />
+    {noindex && <meta name="robots" content="noindex" />}
+    <script is:inline>
+      try {
+        if (localStorage.getItem('unhidden')) document.documentElement.classList.add('unhidden');
+      } catch {}
+    </script>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=blank-2" />
     <title>Julius' Portfolio</title>
   </head>

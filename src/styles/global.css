@@ -438,3 +438,7 @@ main {
     animation: none;
   }
 }
+
+html:not(.unhidden) [data-secret] {
+  display: none;
+}

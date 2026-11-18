@@ -7,61 +7,90 @@ const notes = await getCollection('notes', (n) => !n.data.draft);
 const groups = new Map<string, typeof notes>();
 for (const n of notes) groups.set(topicOf(n), [...(groups.get(topicOf(n)) ?? []), n]);
 const topics = [...groups.keys()].sort();
+const isSecret = (t: string) => groups.get(t)!.every((n) => n.data.hidden);
+let topicNum = 0;
 ---
 
 <Base title="Notes">
   <header class="page-head">
-    <h1>Notes</h1>
+    <h1 data-unhide>Notes</h1>
     <p>Welcome to my notes. They’re handwritten, opinionated, sometimes incomplete, and come with visuals I built and found useful. I hope you find them as useful as I do :) More notes are on the way!</p>
   </header>
 
   <div class="tools">
     <input type="search" placeholder="Filter notes…" aria-label="Filter notes" data-filter />
     <nav class="chips">
-      {topics.map((t) => <a href={`#${t}`}>{topicLabel(t)}</a>)}
+      {
+        topics.map((t) => (
+          <a href={`#${t}`} data-secret={isSecret(t) || undefined}>
+            {topicLabel(t)}
+          </a>
+        ))
+      }
     </nav>
   </div>
 
   {
-    topics.map((t, i) => (
-      <section class="topic" id={t} data-topic>
-        <h2>
-          <span class="num">{i + 1}</span>
-          {topicLabel(t)}
-        </h2>
-        <ol class="toc">
-          {groups
-            .get(t)!
-            .sort(byOrder)
-            .map((n, j) => (
-              <li data-text={`${n.data.title} ${n.data.description ?? ''} ${topicLabel(t)}`.toLowerCase()}>
-                <span class="num">
-                  {i + 1}.{j + 1}
-                </span>
-                <div>
-                  <a href={`/notes/${n.id}/`}>{n.data.title}</a>
-                  {n.data.description && <p>{n.data.description}</p>}
-                </div>
-              </li>
-            ))}
-        </ol>
-      </section>
-    ))
+    topics.map((t) => {
+      const i = isSecret(t) ? null : ++topicNum;
+      let noteNum = 0;
+      return (
+        <section class="topic" id={t} data-topic data-secret={i === null || undefined}>
+          <h2>
+            <span class="num">{i ?? '·'}</span>
+            {topicLabel(t)}
+          </h2>
+          <ol class="toc">
+            {groups
+              .get(t)!
+              .sort(byOrder)
+              .map((n) => (
+                <li
+                  data-text={`${n.data.title} ${n.data.description ?? ''} ${topicLabel(t)}`.toLowerCase()}
+                  data-secret={n.data.hidden || undefined}
+                >
+                  <span class="num">{n.data.hidden ? `${i ?? '·'}.·` : `${i}.${++noteNum}`}</span>
+                  <div>
+                    <a href={`/notes/${n.id}/`}>{n.data.title}</a>
+                    {n.data.description && <p>{n.data.description}</p>}
+                  </div>
+                </li>
+              ))}
+          </ol>
+        </section>
+      );
+    })
   }
   <p class="empty" hidden data-empty>No notes match.</p>
 </Base>
 
 <script>
+  let clicks = 0;
+  let last = 0;
+  document.querySelector('[data-unhide]')?.addEventListener('click', () => {
+    const now = Date.now();
+    clicks = now - last < 600 ? clicks + 1 : 1;
+    last = now;
+    if (clicks < 10) return;
+    clicks = 0;
+    const on = document.documentElement.classList.toggle('unhidden');
+    try {
+      on ? localStorage.setItem('unhidden', '1') : localStorage.removeItem('unhidden');
+    } catch {}
+    input?.dispatchEvent(new Event('input'));
+  });
+
   const input = document.querySelector<HTMLInputElement>('[data-filter]');
   const empty = document.querySelector<HTMLElement>('[data-empty]');
   input?.addEventListener('input', () => {
     const q = input.value.trim().toLowerCase();
+    const unhidden = document.documentElement.classList.contains('unhidden');
     let shown = 0;
     for (const section of document.querySelectorAll<HTMLElement>('[data-topic]')) {
       let hits = 0;
       for (const li of section.querySelectorAll<HTMLElement>('li[data-text]')) {
         li.hidden = !li.dataset.text!.includes(q);
-        if (!li.hidden) hits++;
+        if (!li.hidden && (unhidden || !('secret' in li.dataset))) hits++;
       }
       section.hidden = hits === 0;
       shown += hits;
@@ -153,6 +182,10 @@ const topics = [...groups.keys()].sort();
     margin: 0.1rem 0 0;
     font-size: 0.92rem;
     color: var(--muted);
+  }
+
+  [data-unhide] {
+    user-select: none;
   }
 
   .empty {
