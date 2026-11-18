@@ -1,0 +1,416 @@
+---
+title: Proximal policy optimization
+description: Proximal policy optimization, derived step by step from the policy gradient.
+updated: 2026-11-16
+order: 2
+draft: false
+---
+
+import PpoClip from '../../../components/rl/PpoClip.astro';
+import Aka from '../../../components/rl/Aka.astro';
+
+**Proximal policy optimization** (PPO) is the default on-policy actor-critic algorithm.
+It collects a batch with the current policy, takes a few careful gradient steps on it, then throws it away.
+It works for discrete and continuous actions and scales well with many parallel simulators.
+Its off-policy counterpart is [soft actor-critic](/notes/reinforcement-learning/sac/).
+
+Terms such as advantage, temporal-difference error,
+on-policy and entropy are defined in [useful definitions](/notes/reinforcement-learning/useful-definitions/).
+We use the same Markov decision process notation as in [reward functions](/notes/reinforcement-learning/reward-functions/): states $s_t$,
+actions $a_t$, rewards $R_t$, discount $\gamma$, and objective $J(\pi) = \mathbb{E}_\pi\big[\sum_t \gamma^t R_t\big]$.
+
+## Notation
+
+- $\pi_\theta(a \mid s)$ is the policy (the actor) with parameters $\theta$.
+- $\theta_{\text{old}}$ are the parameters that collected the current batch.
+  They stay fixed while we update $\theta$.
+- $V_\phi(s)$ is the value network (the critic) with parameters $\phi$.
+- $\hat A_t$ is an estimate of the advantage $A^{\pi_{\theta_{\text{old}}}}(s_t, a_t)$.
+  We build it later in this section.
+- $\hat{\mathbb{E}}_t[\cdot]$ means the average over all time steps in the batch.
+
+<Aka>
+
+The proximal policy optimization paper writes the ratio as $r_t(\theta)$,
+which clashes with the reward $r_t$; others write $\rho_t(\theta)$.
+The old policy is also $\pi_{\text{old}}$, $\pi_k$ or $\pi_{\theta_k}$.
+The value network is the **value head** or **critic**, and its parameters are sometimes $\psi$ or $w$.
+
+</Aka>
+
+## Start from the policy gradient
+
+The policy gradient estimate on a batch is
+
+$$
+\hat g = \hat{\mathbb{E}}_t\big[\nabla_\theta \log \pi_\theta(a_t \mid s_t)\, \hat A_t\big].
+$$
+
+It is the gradient of the policy gradient loss
+
+$$
+L^{\text{PG}}(\theta) = \hat{\mathbb{E}}_t\big[\log \pi_\theta(a_t \mid s_t)\, \hat A_t\big].
+$$
+
+Vanilla policy gradient takes **one** step along $\hat g$ and then collects new data.
+This is wasteful: we paid for thousands of environment steps and used them for one update.
+The obvious idea is to take many gradient steps on $L^{\text{PG}}$ with the same batch.
+
+That does not work.
+$L^{\text{PG}}$ has the correct gradient only at $\theta = \theta_{\text{old}}$,
+because the data came from $\pi_{\theta_{\text{old}}}$.
+Further from $\theta_{\text{old}}$ it is not an estimate of anything useful.
+Worse, for a sample with $\hat A_t \lt 0$ the loss keeps rewarding us for driving $\log \pi_\theta(a_t \mid s_t)$ towards $-\infty$.
+Repeated steps can destroy the policy.
+
+We need an objective that (1) says how much a **new** policy improves on the old one,
+(2) can be estimated from the **old** policy's data, and (3) stops being trusted when the new policy moves too far.
+
+## How much does a new policy improve?
+
+Take any two policies $\pi$ and $\pi'$. The **performance difference lemma** states
+
+$$
+J(\pi') - J(\pi) = \frac{1}{1-\gamma}\, \mathbb{E}_{s \sim d^{\pi'}}\, \mathbb{E}_{a \sim \pi'(\cdot \mid s)}\big[A^\pi(s, a)\big],
+$$
+
+where $d^{\pi'}$ is the discounted state-visitation distribution of $\pi'$.
+
+To see why, run $\pi'$ and add up the old policy's advantages along its trajectory.
+Write each advantage as $A^\pi(s_t, a_t) = \mathbb{E}\big[R_t + \gamma V^\pi(s_{t+1}) - V^\pi(s_t)\big]$.
+The sum telescopes:
+
+$$
+\mathbb{E}_{\tau \sim \pi'}\left[\sum_t \gamma^t A^\pi(s_t, a_t)\right]
+= \mathbb{E}_{\tau \sim \pi'}\left[\sum_t \gamma^t R_t - V^\pi(s_0)\right]
+= J(\pi') - J(\pi).
+$$
+
+Every $\gamma^{t+1} V^\pi(s_{t+1})$ cancels the $-\gamma^{t+1} V^\pi(s_{t+1})$ of the next step, leaving only $-V^\pi(s_0)$.
+Its expectation over $s_0 \sim \rho_0$ is $J(\pi)$.
+Rewriting the sum over time as an average over $d^{\pi'}$ gives the factor $1/(1-\gamma)$.
+
+So $\pi'$ is better than $\pi$ exactly when, on the states $\pi'$ visits,
+it picks actions that $\pi$ thinks have positive advantage.
+
+## The surrogate objective
+
+The lemma needs states from $d^{\pi'}$ and actions from $\pi'$.
+We only have data from $\pi_{\theta_{\text{old}}}$.
+We make two changes.
+
+**Actions**: importance sampling turns an average over $\pi_\theta$ into an average over $\pi_{\theta_{\text{old}}}$ exactly:
+
+$$
+\mathbb{E}_{a \sim \pi_\theta}\big[A(s, a)\big] = \mathbb{E}_{a \sim \pi_{\theta_{\text{old}}}}\left[\frac{\pi_\theta(a \mid s)}{\pi_{\theta_{\text{old}}}(a \mid s)}\, A(s, a)\right].
+$$
+
+**States**: replace $d^{\pi_\theta}$ with $d^{\pi_{\theta_{\text{old}}}}$.
+This is **not** exact.
+It is a good approximation only while the two policies are close, because then they visit similar states.
+
+Define the **probability ratio**
+
+$$
+r_t(\theta) = \frac{\pi_\theta(a_t \mid s_t)}{\pi_{\theta_{\text{old}}}(a_t \mid s_t)}.
+$$
+
+At $\theta = \theta_{\text{old}}$, $r_t = 1$ for every sample.
+Dropping the constant $1/(1-\gamma)$, the **surrogate objective** is
+
+$$
+L^{\text{CPI}}(\theta) = \hat{\mathbb{E}}_t\big[r_t(\theta)\, \hat A_t\big].
+$$
+
+(CPI stands for conservative policy iteration, where this objective first appeared.)
+Check its gradient at the old parameters:
+
+$$
+\nabla_\theta L^{\text{CPI}}\big|_{\theta_{\text{old}}}
+= \hat{\mathbb{E}}_t\left[\frac{\nabla_\theta \pi_\theta(a_t \mid s_t)}{\pi_{\theta_{\text{old}}}(a_t \mid s_t)}\, \hat A_t\right]_{\theta_{\text{old}}}
+= \hat{\mathbb{E}}_t\big[\nabla_\theta \log \pi_\theta(a_t \mid s_t)\, \hat A_t\big]_{\theta_{\text{old}}}
+= \hat g.
+$$
+
+So $L^{\text{CPI}}$ matches the true improvement $J(\pi_\theta) - J(\pi_{\theta_{\text{old}}})$ to first order.
+It satisfies requirements (1) and (2).
+It does not satisfy (3): maximized without limits, it pushes $r_t$ to infinity for every positive-advantage sample.
+
+**Trust region policy optimization** (TRPO) adds the missing limit as a hard constraint:
+
+$$
+\max_\theta\; L^{\text{CPI}}(\theta) \quad \text{subject to} \quad \hat{\mathbb{E}}_t\Big[D_{\mathrm{KL}}\big(\pi_{\theta_{\text{old}}}(\cdot \mid s_t) \,\|\, \pi_\theta(\cdot \mid s_t)\big)\Big] \le \delta.
+$$
+
+This is theoretically well-founded, since the error of the state approximation is bounded by the Kullback-Leibler divergence.
+But solving it needs second-order information (the curvature of the Kullback-Leibler divergence) and a line search.
+Proximal policy optimization gets most of the benefit with plain gradient descent.
+
+## The clipped objective
+
+Proximal policy optimization replaces the constraint with a change to the objective itself.
+Choose a **clip range** $\epsilon$, usually $0.2$.
+Then
+
+$$
+L^{\text{CLIP}}(\theta) = \hat{\mathbb{E}}_t\Big[\min\big(r_t(\theta)\, \hat A_t,\; \operatorname{clip}\big(r_t(\theta),\, 1-\epsilon,\, 1+\epsilon\big)\, \hat A_t\big)\Big],
+$$
+
+where $\operatorname{clip}(x, l, u)$ limits $x$ to the interval $[l, u]$.
+Read it one sample at a time, split by the sign of the advantage.
+
+**Positive advantage**, $\hat A_t \gt 0$.
+We want to make $a_t$ more likely, so we want $r_t$ to grow.
+The term simplifies to
+
+$$
+\min\big(r_t,\, 1+\epsilon\big)\, \hat A_t.
+$$
+
+Once $r_t \gt 1 + \epsilon$, the objective is flat and its gradient is zero.
+There is no further reward for making this action more likely.
+Below $1 - \epsilon$ the term is still $r_t \hat A_t$ and keeps its gradient,
+so a step that went the wrong way can be undone.
+
+**Negative advantage**, $\hat A_t \lt 0$. We want $r_t$ to shrink. The term simplifies to
+
+$$
+\max\big(r_t,\, 1-\epsilon\big)\, \hat A_t.
+$$
+
+Once $r_t \lt 1 - \epsilon$, the objective is flat.
+Above $1 + \epsilon$ it is still $r_t \hat A_t$,
+so a step that accidentally made a bad action more likely is still penalized.
+
+The pattern: clipping removes the incentive to move further in the **improving** direction,
+but never removes the penalty for moving in the **worsening** direction.
+The $\min$ makes $L^{\text{CLIP}}$ a lower bound on $L^{\text{CPI}}$ for every sample - a pessimistic estimate that ignores gains claimed far from the data.
+
+The figure plots one sample's term against $r_t$.
+The dashed line is the unclipped $r_t \hat A_t$, the shaded band is $[1-\epsilon, 1+\epsilon]$,
+and the dot marks the chosen $r_t$.
+
+Things to try:
+
+- With $\hat A_t \gt 0$, move $r_t$ above $1 + \epsilon$.
+  The curve is flat and the status reports zero gradient.
+  Now move $r_t$ below $1 - \epsilon$: the curve follows the dashed line again.
+- Make $\hat A_t$ negative.
+  The flat part moves to the left of the band.
+  Moving $r_t$ to the right of the band still costs objective.
+- Shrink $\epsilon$.
+  The band where this sample can change the policy narrows, giving smaller, more conservative updates.
+
+<PpoClip />
+
+Clipping limits each **sample's** incentive.
+It does not bound the Kullback-Leibler divergence between policies.
+A sample whose ratio already sits outside the band contributes no gradient,
+but other samples still move the shared network weights,
+and those weights can push the clipped sample's ratio even further out.
+After many epochs, the real Kullback-Leibler can be much larger than $\epsilon$ suggests.
+Practical implementations therefore monitor an approximate Kullback-Leibler and stop the epoch loop early if it grows too large (see diagnostics below).
+
+## Estimating the advantage
+
+The objective needs $\hat A_t$ for every sample.
+We have the critic $V_\phi$, trained to approximate $V^{\pi_{\theta_{\text{old}}}}$.
+From the definitions page, the temporal-difference error
+
+$$
+\delta_t = R_t + \gamma V_\phi(s_{t+1}) - V_\phi(s_t)
+$$
+
+is a one-step advantage estimate. It has low variance, but it is biased wherever $V_\phi$ is wrong.
+
+Using $k$ real rewards before bootstrapping gives the **$k$-step advantage estimate**.
+It is a sum of temporal-difference errors, because the intermediate values telescope:
+
+$$
+\hat A_t^{(k)} = \sum_{l=0}^{k-1} \gamma^l \delta_{t+l}
+= -V_\phi(s_t) + R_t + \gamma R_{t+1} + \cdots + \gamma^{k-1} R_{t+k-1} + \gamma^k V_\phi(s_{t+k}).
+$$
+
+Small $k$ means low variance and high bias.
+Large $k$ means the reverse.
+At $k = \infty$, it is the Monte Carlo return minus a baseline.
+
+**Generalized advantage estimation** (GAE) does not pick one $k$.
+It takes an exponentially weighted average over all of them with a parameter $\lambda \in [0, 1]$:
+
+$$
+\hat A_t^{\text{GAE}} = (1-\lambda)\Big(\hat A_t^{(1)} + \lambda \hat A_t^{(2)} + \lambda^2 \hat A_t^{(3)} + \cdots\Big).
+$$
+
+The weights $(1-\lambda)\lambda^{k-1}$ sum to one.
+Now collect the coefficient of a single $\delta_{t+l}$.
+It appears in every $\hat A^{(k)}$ with $k \gt l$, each time multiplied by $\gamma^l$, so its total weight is
+
+$$
+\gamma^l (1-\lambda) \sum_{k=l+1}^{\infty} \lambda^{k-1} = \gamma^l (1-\lambda) \frac{\lambda^l}{1-\lambda} = (\gamma\lambda)^l.
+$$
+
+This gives the form actually used:
+
+$$
+\boxed{\hat A_t^{\text{GAE}} = \sum_{l=0}^{\infty} (\gamma\lambda)^l\, \delta_{t+l}.}
+$$
+
+- $\lambda = 0$ gives $\hat A_t = \delta_t$: one-step temporal-difference estimate, low variance, high bias.
+- $\lambda = 1$ gives $\hat A_t = \sum_l \gamma^l R_{t+l} - V_\phi(s_t)$:
+  Monte Carlo, unbiased, high variance.
+- $\lambda = 0.95$ is the common default.
+
+$\lambda$ and $\gamma$ play different roles.
+$\gamma$ is part of the problem: it defines which return we maximize.
+$\lambda$ is only part of the estimator: it trades bias against variance.
+
+The sum is computed backwards over the rollout with a one-line recursion:
+
+$$
+\hat A_t = \delta_t + \gamma\lambda\, \hat A_{t+1}.
+$$
+
+## Episode boundaries
+
+A rollout of $T$ steps usually contains several episode ends, and stops in the middle of an episode.
+Each case changes the recursion differently:
+
+- **Termination** at step $t$: no future reward exists.
+  Set $V(s_{t+1}) = 0$ inside $\delta_t$ and do not carry $\hat A_{t+1}$ backward across the boundary.
+- **Truncation** at step $t$ (time limit): future reward exists, but it belongs to an episode we did not observe.
+  Keep $\gamma V_\phi(s_{t+1})$ inside $\delta_t$, using the real final observation,
+  but still do not carry $\hat A_{t+1}$ backward.
+- **End of the rollout**: the same as truncation. Bootstrap with $V_\phi(s_T)$.
+
+Treating truncation as termination tells the critic that the world ends at the time limit.
+That is a common and silent bug.
+
+## The critic and the value target
+
+The critic is regressed onto the **$\lambda$-return**, which is the advantage plus the value it was measured against:
+
+$$
+\hat R_t = \hat A_t + V_{\phi_{\text{old}}}(s_t), \qquad
+L^{\text{VF}}(\phi) = \hat{\mathbb{E}}_t\Big[\big(V_\phi(s_t) - \hat R_t\big)^2\Big].
+$$
+
+VF stands for value function.
+$\hat R_t$ is computed once, before the update, and held fixed during the epochs.
+
+## The full loss
+
+Proximal policy optimization minimizes
+
+$$
+L(\theta, \phi) = -L^{\text{CLIP}}(\theta) + c_1\, L^{\text{VF}}(\phi) - c_2\, \hat{\mathbb{E}}_t\Big[\mathcal{H}\big(\pi_\theta(\cdot \mid s_t)\big)\Big].
+$$
+
+The first term improves the policy.
+The second trains the critic, with $c_1 \approx 0.5$.
+The third is an entropy bonus with $c_2$ between $0$ and $0.01$.
+It slows the collapse of the policy to a deterministic one.
+It is a fixed-weight regularizer, unlike soft actor-critic, where entropy is part of the objective.
+
+Two practical details:
+
+- **Advantage normalization**: in each minibatch, subtract the mean of $\hat A_t$ and divide by its standard deviation.
+  This makes the step size independent of the reward scale.
+- **Actor and critic**: they can share a network body or be separate networks.
+  Separate networks are more common for continuous control,
+  because the scale of the value loss can disturb a shared body.
+
+## The policy distribution
+
+For **discrete actions**, the network outputs one logit per action and $\pi_\theta$ is the softmax over them.
+
+For **continuous actions**, the policy is a diagonal Gaussian.
+The network outputs the mean $\mu_\theta(s) \in \mathbb{R}^m$.
+The standard deviations $\sigma \in \mathbb{R}^m$ are usually a separate learned parameter that does not depend on $s$,
+stored as $\log \sigma$ so that it is always positive.
+The log-probability is a sum over action dimensions:
+
+$$
+\log \pi_\theta(a \mid s) = -\sum_{i=1}^{m} \left[\frac{\big(a_i - \mu_{\theta,i}(s)\big)^2}{2\sigma_i^2} + \log \sigma_i + \tfrac12 \log 2\pi\right].
+$$
+
+If the environment has action bounds, clip the sampled action **only when sending it to the environment**.
+Store and evaluate the unclipped sample,
+so that $\log \pi_{\theta_{\text{old}}}$ and $\log \pi_\theta$ refer to the same action.
+
+## The algorithm
+
+Run $N$ environments in parallel. Repeat:
+
+1. **Collect.** Run $\pi_{\theta_{\text{old}}}$ for $T$ steps in each environment.
+   Store $s_t$, $a_t$, $R_t$, termination and truncation flags, and $\log \pi_{\theta_{\text{old}}}(a_t \mid s_t)$.
+   This gives a batch of $NT$ transitions.
+2. **Estimate.** Evaluate $V_\phi$ on all stored states.
+   Compute $\delta_t$, then $\hat A_t$ backwards with generalized advantage estimation,
+   then $\hat R_t = \hat A_t + V_\phi(s_t)$.
+3. **Optimize.** For $K$ epochs: shuffle the batch, split it into minibatches,
+   and take one Adam step on $L(\theta, \phi)$ per minibatch.
+   Recompute $r_t(\theta) = \exp\big(\log \pi_\theta(a_t \mid s_t) - \log \pi_{\theta_{\text{old}}}(a_t \mid s_t)\big)$ on every step, since $\theta$ changes.
+4. **Discard.** Set $\theta_{\text{old}} \leftarrow \theta$ and throw away the batch.
+
+Step 4 is what makes proximal policy optimization on-policy.
+After the update, the batch's states come from the wrong distribution, and the surrogate would trust them less and less.
+
+The advantage computation and loss in PyTorch, with `[T, N]` tensors for the rollout:
+
+```python
+def gae(rewards, values, next_values, terminated, done, gamma=0.99, lam=0.95):
+    adv = torch.zeros_like(rewards)
+    last = torch.zeros_like(rewards[0])
+    for t in reversed(range(rewards.shape[0])):
+        delta = rewards[t] + gamma * (1 - terminated[t]) * next_values[t] - values[t]
+        last = delta + gamma * lam * (1 - done[t]) * last
+        adv[t] = last
+    return adv, adv + values
+
+
+def ppo_loss(dist, value, act, logp_old, adv, ret, eps=0.2, c1=0.5, c2=0.0):
+    ratio = torch.exp(dist.log_prob(act) - logp_old)
+    adv = (adv - adv.mean()) / (adv.std() + 1e-8)
+    policy_loss = -torch.min(ratio * adv, ratio.clamp(1 - eps, 1 + eps) * adv).mean()
+    value_loss = (value - ret).pow(2).mean()
+    return policy_loss + c1 * value_loss - c2 * dist.entropy().mean()
+```
+
+Here `done` is termination **or** truncation, and `next_values[t]` is $V_\phi$ of the real next observation,
+even when the episode was truncated and the environment has already reset.
+`dist` is the policy distribution on the minibatch, with a `log_prob` that already sums over action dimensions.
+
+## Diagnostics
+
+Log these on every update:
+
+- **Approximate Kullback-Leibler divergence**:
+  $\hat{\mathbb{E}}_t\big[(r_t - 1) - \log r_t\big]$.
+  This is a non-negative, low-variance estimate of $D_{\mathrm{KL}}(\pi_{\theta_{\text{old}}} \,\|\, \pi_\theta)$.
+  Typical values are around $0.01$.
+  Many implementations stop the epoch loop when it passes a threshold such as $0.015$ to $0.03$.
+- **Clip fraction**: the fraction of samples with $|r_t - 1| \gt \epsilon$.
+  Typical values are $0.05$ to $0.2$.
+  Near zero means the steps are too small.
+  Large values mean the policy has moved far from the data that measured its advantages.
+- **Explained variance** of the critic:
+  $1 - \operatorname{Var}(\hat R_t - V_\phi(s_t)) / \operatorname{Var}(\hat R_t)$.
+  Near $1$ is good.
+  Near $0$ or negative means the advantages are mostly noise.
+- **Policy entropy** or $\log \sigma$: if it collapses early, the policy stops exploring.
+
+## Typical hyperparameters
+
+| Parameter | Typical value |
+| --- | --- |
+| Clip range $\epsilon$ | $0.2$ |
+| Discount $\gamma$ | $0.99$ |
+| Generalized advantage estimation $\lambda$ | $0.95$ |
+| Steps per batch $NT$ | $2048$ (one environment) to $10^5$ or more (GPU simulators) |
+| Epochs $K$ | $3$ to $10$ |
+| Minibatches per epoch | $4$ to $32$ |
+| Learning rate | $3 \times 10^{-4}$, often annealed linearly to zero |
+| Value coefficient $c_1$ | $0.5$ |
+| Entropy coefficient $c_2$ | $0$ (continuous) to $0.01$ (discrete) |
+| Gradient norm clip | $0.5$ |

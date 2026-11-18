@@ -1,0 +1,297 @@
+---
+title: Kalman filter
+updated: 2026-11-14
+order: 2
+draft: false
+---
+
+import EstimationDemo from '../../../components/estimation/EstimationDemo.astro';
+
+The [Luenberger observer](/notes/estimation/luenberger-observer/) combines a model with measurements by correcting its prediction with a sensor residual. Its gain tells us how strongly to correct. The Kalman filter calculates that gain by tracking how uncertain the prediction is.
+
+We begin with the angular speed of a voltage-driven motor, then return to the cart to see why covariance matrices are much more useful than a list of independent uncertainty numbers.
+
+## Combining two uncertain numbers
+
+Suppose our predicted motor speed is $\hat x^-=20\,\mathrm{rad/s}$ and a sensor reads $z=23\,\mathrm{rad/s}$. The superscript minus means **before using this measurement**; plus will mean after. These are stage labels, not signs.
+
+How far toward the sensor should we move? Write
+
+$$
+\hat x^+=\hat x^-+K(z-\hat x^-)
+=(1-K)\hat x^-+Kz.
+$$
+
+Assume the prediction and sensor errors are independent and zero-mean. Let their variances be $P^-$ and $R$. A variance is an average squared error, so its units here are $(\mathrm{rad/s})^2$. Its square root is a standard deviation, in $\mathrm{rad/s}$.
+
+The corrected error is a weighted sum of the two errors, giving
+
+$$
+P^+=(1-K)^2P^-+K^2R.
+$$
+
+Differentiating with respect to $K$ and setting the derivative to zero gives
+
+$$
+-2(1-K)P^-+2KR=0
+\quad\Longrightarrow\quad
+\boxed{K=\frac{P^-}{P^-+R}.}
+$$
+
+A more uncertain prediction gives a larger gain. A more uncertain sensor gives a smaller gain. With $P^-=4$ and $R=1$, we get $K=0.8$, so
+
+$$
+\hat x^+=22.4\,\mathrm{rad/s},\qquad P^+=0.8\,(\mathrm{rad/s})^2.
+$$
+
+The estimate moves most of the way toward the more precise sensor. Its standard deviation falls from $2$ to $\sqrt{0.8}\approx0.89\,\mathrm{rad/s}$. Substituting the optimal gain also simplifies the variance update to $P^+=(1-K)P^-$.
+
+This minimum-variance weighted combination does not require Gaussian errors. Gaussian assumptions give the stronger interpretation: the entire posterior distribution is Gaussian, and these equations compute its exact mean and variance.
+
+## A filter repeats this calculation
+
+The motor changes speed between readings, and we know the voltage sent to it. Sample a first-order motor model, holding the voltage constant over each interval:
+
+$$
+x_k=\alpha x_{k-1}+\beta u_k+w_k,\qquad z_k=x_k+v_k,
+$$
+
+where $u_k$ is the voltage applied during the interval ending at sample $k$. For the continuous model $\dot x=-ax+bu$, exact sampling gives
+
+$$
+\alpha=e^{-a\Delta t},\qquad \beta=\frac ba(1-\alpha).
+$$
+
+With $a=0.2$, $b=2$, and $\Delta t=0.1\,\mathrm s$, these are $\alpha\approx0.9802$ and $\beta\approx0.1980$. The random term $w_k$ represents unpredictable load changes and other transition errors:
+
+$$
+\operatorname{Var}(w_k)=Q,\qquad \operatorname{Var}(v_k)=R.
+$$
+
+Assume independent noise across time and between the two sources, with zero means. The index $k$ counts samples.
+
+At each sample, first **predict**:
+
+$$
+\hat x_k^-=\alpha\hat x_{k-1}^++\beta u_k,\qquad P_k^-=\alpha^2P_{k-1}^++Q.
+$$
+
+The voltage command moves the predicted speed before we look at a sensor. The factor $\alpha$ scales the old state error, so its variance is scaled by $\alpha^2$; process noise then adds $Q$. Then **update**:
+
+$$
+\begin{aligned}
+r_k&=z_k-\hat x_k^-, & S_k&=P_k^-+R,\\
+K_k&=P_k^-/S_k, & \hat x_k^+&=\hat x_k^-+K_kr_k,\\
+P_k^+&=(1-K_k)P_k^-.
+\end{aligned}
+$$
+
+$r_k$ is the **innovation**, another name for the measurement residual. $S_k$ is its predicted variance: uncertainty in the predicted reading plus uncertainty in the sensor. The filter carries two numbers forward, $\hat x_k^+$ and $P_k^+$.
+
+Start with an estimate of the initial motor speed and a plausible initial variance $P_0^+$. A small $P_0^+$ says we already know the starting value closely; an unjustifiably tiny one can make the filter reluctant to recover from a wrong initialization.
+
+In the figure, the motor initially spins at $20\,\mathrm{rad/s}$. The voltage is $2\,\mathrm V$ until four seconds, $4\,\mathrm V$ until ten seconds, then $1\,\mathrm V$. These are test commands supplied to both the motor and the estimator, rather than a feedback control law. The true process variance is $0.04\,(\mathrm{rad/s})^2$ per sample, and measurement variance is $1\,(\mathrm{rad/s})^2$. The sliders change what the filter *assumes*, keeping the same true trajectory and sensor samples. The shaded band is the filter's reported marginal $\pm2\sqrt P$ interval, about 95% under a calibrated Gaussian model.
+
+Things to try:
+
+- Start at the true noise values, $Q=0.04$ and $R=1$. Compare the final gain and reported uncertainty with the settings below.
+- Reduce assumed $R$. The estimate follows the noisy sensor more closely, and can report too much confidence.
+- Reduce assumed $Q$. The filter relies more on the motor model and is slower to correct unexpected load disturbances. The known voltage steps are still included in its prediction.
+
+<EstimationDemo kind="scalar" />
+
+If we instead chose $\alpha=1$ and no control input, a constant gain would recover the exponential moving average from [first-order filters](/notes/signal-processing/first-order-filters/). The motor model adds something useful: the filter anticipates acceleration from a known voltage command instead of waiting for the readings to move.
+
+## From a number to a state vector
+
+Let a cart's state contain position and velocity:
+
+$$
+x_k=\begin{bmatrix}p_k\\v_k\end{bmatrix},\quad
+F=\begin{bmatrix}1&\Delta t\\0&1\end{bmatrix},\quad
+H=\begin{bmatrix}1&0\end{bmatrix}.
+$$
+
+The state model $x_k=Fx_{k-1}+w_k$ says $p_k=p_{k-1}+\Delta t\,v_{k-1}$ and $v_k=v_{k-1}$, apart from process noise. The measurement model $z_k=Hx_k+v_k^{\text{sensor}}$ says we measure only position. We will use $w$ and $v^{\text{sensor}}$ for noise here to distinguish it from the cart's velocity.
+
+We need uncertainty in both quantities and a record of how their errors move together:
+
+$$
+P=\mathbb E\big[(x-\hat x)(x-\hat x)^\top\big]
+=\begin{bmatrix}P_{pp}&P_{pv}\\P_{pv}&P_{vv}\end{bmatrix}.
+$$
+
+The diagonal holds position variance and velocity variance. The off-diagonal is **cross-covariance**. A positive $P_{pv}$ means that when position is underestimated, velocity tends to be underestimated too. It describes errors across possible realizations, rather than saying that position itself must always increase with velocity.
+
+### Prediction creates cross-covariance
+
+Predict the mean with $F\hat x$. Predict its covariance with $FPF^\top+Q$. Ignoring $Q$ for a moment, expanding the multiplication gives
+
+$$
+\begin{aligned}
+P_{pp}^-&=P_{pp}^++2\Delta t\,P_{pv}^++\Delta t^2P_{vv}^+,\\
+P_{pv}^-&=P_{pv}^++\Delta t\,P_{vv}^+,\\
+P_{vv}^-&=P_{vv}^+.
+\end{aligned}
+$$
+
+Even if the errors started independent, uncertain velocity becomes uncertain position during prediction, creating a positive cross-covariance. A covariance ellipse in the position/velocity plane becomes tilted. The matrix multiplication carries that relationship forward automatically.
+
+### One sensor can correct two states
+
+For a position sensor, the matrix gain reduces to
+
+$$
+K=\frac{1}{P_{pp}^-+R}\begin{bmatrix}P_{pp}^-\\P_{pv}^-\end{bmatrix}.
+$$
+
+There is still one residual, $r=z-\hat p^-$, but now two corrections:
+
+$$
+\hat p^+=\hat p^-+K_pr,\qquad
+\hat v^+=\hat v^-+K_vr.
+$$
+
+Here is a full numerical update with $\Delta t=1\,\mathrm s$. Start with $\hat x^+=[0,1]^\top$, $P^+=\operatorname{diag}(1,1)$, and use $Q=0$ for this one prediction. Then
+
+$$
+\hat x^-=\begin{bmatrix}1\\1\end{bmatrix},\qquad
+P^-=\begin{bmatrix}2&1\\1&1\end{bmatrix}.
+$$
+
+A position reading $z=2\,\mathrm m$ with $R=1\,\mathrm m^2$ gives $r=1\,\mathrm m$, $S=3\,\mathrm m^2$, and
+
+$$
+K=\begin{bmatrix}2/3\\1/3\end{bmatrix},\qquad
+\hat x^+=\begin{bmatrix}5/3\\4/3\end{bmatrix},\qquad
+P^+=\begin{bmatrix}2/3&1/3\\1/3&2/3\end{bmatrix}.
+$$
+
+We increased the velocity estimate without measuring velocity. The prediction established that an underestimated velocity could explain an unexpectedly large position reading. $K_p$ is dimensionless; $K_v$ has units of inverse seconds.
+
+In the figure, hold the prior marginal variances at $P_{pp}^-=2$ and $P_{vv}^-=1$, and change their correlation $\rho=P_{pv}^-/\sqrt{P_{pp}^-P_{vv}^-}$. The default $\rho=1/\sqrt2$ reproduces the update above. The ellipses are contours with squared Mahalanobis distance $4$; for a two-dimensional Gaussian they contain about 86% of the probability, rather than the one-dimensional 95% interval.
+
+Things to try:
+
+- Set correlation to zero. Position is corrected, but velocity and its variance stay unchanged.
+- Make correlation negative. The same positive position residual now *decreases* the velocity estimate.
+- Increase sensor variance. The posterior stays closer to the prior, and the uncertainty shrinks less.
+
+<EstimationDemo kind="covariance" />
+
+This is what the matrix form buys us: coupled predictions, indirect measurements, and corrections that respect shared uncertainty. Running two independent scalar filters would discard the cross-covariance and lose this behavior.
+
+## The general linear filter
+
+For $n$ states and $m$ measurements, use
+
+$$
+x_k=F_kx_{k-1}+B_ku_k+w_k,\qquad z_k=H_kx_k+v_k,
+$$
+
+with process covariance $Q_k$ and measurement covariance $R_k$. Assume the initial error and all noise terms are mutually independent, zero-mean, and white across samples. The linear Gaussian model makes the following recursion exact; without Gaussianity it is optimal among linear estimators under these assumptions.
+
+**Predict:**
+
+$$
+\hat x_k^-=F_k\hat x_{k-1}^++B_ku_k,\qquad
+P_k^-=F_kP_{k-1}^+F_k^\top+Q_k.
+$$
+
+**Compare and correct:**
+
+$$
+\begin{aligned}
+r_k&=z_k-H_k\hat x_k^-,\\
+S_k&=H_kP_k^-H_k^\top+R_k,\\
+K_k&=P_k^-H_k^\top S_k^{-1},\\
+\hat x_k^+&=\hat x_k^-+K_kr_k.
+\end{aligned}
+$$
+
+$H$ maps state uncertainty into sensor coordinates. $S$ is $m\times m$, so the inverse acts in measurement space. $PH^\top$ then maps the weighted residual back into the state. $K$ is $n\times m$: each sensor can correct several states.
+
+In exact arithmetic, $P_k^+=(I-K_kH_k)P_k^-$. A more robust floating-point implementation uses the **Joseph form**:
+
+$$
+P_k^+=(I-K_kH_k)P_k^-(I-K_kH_k)^\top+K_kR_kK_k^\top.
+$$
+
+Use a linear solve instead of explicitly computing the inverse:
+
+```python
+import numpy as np
+
+def kalman_step(x, P, z, F, H, Q, R):
+    # x and z are 1-D arrays; this example has no control input.
+    x = F @ x
+    P = F @ P @ F.T + Q
+    residual = z - H @ x
+    S = H @ P @ H.T + R
+    K = np.linalg.solve(S, (P @ H.T).T).T
+    x = x + K @ residual
+    M = np.eye(x.size) - K @ H
+    P = M @ P @ M.T + K @ R @ K.T
+    return x, (P + P.T) / 2
+```
+
+For multiple sensors, stack their readings in $z$ and their observation rows in $H$. Their noise variances lie on $R$'s diagonal; off-diagonal terms describe correlated sensor errors. For example, two sensors sharing the same environmental disturbance provide less independent information than two unrelated sensors. Sequential scalar updates are equivalent to the joint linear update when their measurement noises are independent and both readings describe the same state time.
+
+## Finding sensor covariance in practice
+
+$R$ describes error in the measurements, in the units and coordinates used by $z$. A useful first experiment is surprisingly simple: hold the measured quantity fixed, let the sensor warm up, and record many samples at the sampling rate and with the filtering you will use in operation.
+
+For synchronized vector samples $z_1,\ldots,z_N$, calculate
+
+$$
+\bar z=\frac1N\sum_i z_i,\qquad
+\hat R=\frac{1}{N-1}\sum_i(z_i-\bar z)(z_i-\bar z)^\top.
+$$
+
+For one sensor this is just the sample variance. For several channels, it also measures whether their fluctuations occur together. In Python:
+
+```python
+# Each row is one time sample; columns are synchronized channels.
+R = np.atleast_2d(np.cov(samples, rowvar=False, ddof=1))
+sigma = np.sqrt(np.diag(R))
+```
+
+If a stationary position sensor has a standard deviation of $0.03\,\mathrm m$, use an initial $R=(0.03)^2=0.0009\,\mathrm m^2$, not $0.03$. If two channels have standard deviations $0.03$ and $0.04\,\mathrm m$ and correlation $0.5$, their covariance is $0.5(0.03)(0.04)=0.0006\,\mathrm m^2$:
+
+$$
+R=\begin{bmatrix}0.0009&0.0006\\0.0006&0.0016\end{bmatrix}\,\mathrm m^2.
+$$
+
+A stationary log measures repeatability around its mean. It does **not** reveal a constant bias. If the reference position is known, compare $\bar z$ against it, calibrate the offset, or add a slowly varying bias state to the model. More samples do not remove a systematic error.
+
+Repeat at representative temperatures, distances, orientations, and vibration levels. A sensor quiet on a desk may be noisy on a moving robot. When ground truth is available during motion, estimate covariance from measurement errors $z_i-h(x_i^{\text{reference}})$; raw moving readings contain real motion as well as noise. Account for uncertainty in the reference too: independent reference error adds its own covariance to these residuals.
+
+Inspect the error's time trace and autocorrelation. Internal smoothing, drift, and shared clocks can violate the independent-noise assumption. Consider modeling those dynamics or reducing the sampling rate when justified; simply inserting a small stationary variance at every fast update can make the filter overconfident. Datasheet noise density also needs conversion through the actual bandwidth before it becomes a sample variance.
+
+### Process covariance is a different experiment
+
+$Q$ describes errors in a state transition, not errors in the sensor. Do not copy $R$ into $Q$. With sufficiently accurate reference states, inspect $x_k^{\text{reference}}-F_kx_{k-1}^{\text{reference}}-B_ku_k$; noisy reference states complicate this estimate.
+
+Often it is easier to model a plausible missing physical input. For our cart, suppose an unknown acceleration $a_k$ is constant over each sample interval, independent between intervals, with variance $\sigma_a^2$. Its effect is
+
+$$
+w_k=Ga_k,\quad G=\begin{bmatrix}\Delta t^2/2\\\Delta t\end{bmatrix},\qquad
+Q=G\sigma_a^2G^\top
+=\sigma_a^2\begin{bmatrix}\Delta t^4/4&\Delta t^3/2\\\Delta t^3/2&\Delta t^2\end{bmatrix}.
+$$
+
+One unknown acceleration perturbs both position and velocity, so $Q$ has off-diagonal terms too. This is a piecewise-constant random acceleration model. A continuous white acceleration model instead gives $Q=q\begin{bmatrix}\Delta t^3/3&\Delta t^2/2\\\Delta t^2/2&\Delta t\end{bmatrix}$, where $q$ is a spectral intensity with different units. Choose the model before choosing its numbers.
+
+### Check the assumptions against new data
+
+On held-out logs, innovations should be roughly zero-mean and uncorrelated across time, with covariance close to the predicted $S_k$. The normalized innovation squared, $r_k^\top S_k^{-1}r_k$, has expected value $m$ under the correctly specified model. Individual samples fluctuate; judge a sequence rather than forcing every residual to have the same size. Persistent bias or time structure can indicate wrong dynamics, timing errors, bias, or bad noise assumptions.
+
+The reported $P$ is the filter's uncertainty *under its model*. It is useful only to the extent that the model and noise assumptions describe the experiment.
+
+## Beyond linear models
+
+The prediction/correction structure survives when motion or measurements are nonlinear. The [extended Kalman filter](/notes/estimation/extended-kalman-filter/) uses local derivatives to carry uncertainty through those nonlinear functions.
+
+## Further reading
+
+[Welch and Bishop, An Introduction to the Kalman Filter](https://www.cs.utexas.edu/~pstone/Courses/393Rfall18/readings/Welch%2BBishop-TR-95.pdf) gives the linear and extended recursions and discusses noise covariance selection. [Stanford EE363: The Kalman filter](https://ee363.stanford.edu/lectures/021_kf.pdf) develops the covariance and estimation arguments.

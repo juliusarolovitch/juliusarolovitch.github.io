@@ -1,0 +1,140 @@
+---
+import katex from 'katex';
+
+const tex = (s: string) => katex.renderToString(s);
+---
+
+<figure class="viz" data-sac-temp>
+  <div class="viz-controls">
+    <label><Fragment set:html={tex(String.raw`\alpha`)} /> <input type="range" min="-2" max="1" step="0.01" value="-0.5" data-alpha /><output data-alpha-out></output></label>
+    <label><Fragment set:html={tex(String.raw`\bar{\mathcal H}`)} /> <input type="range" min="0" max="1.6" step="0.01" value="0.8" data-target /><output data-target-out></output></label>
+    <div class="viz-seg"><button type="button" data-tune aria-pressed="false">tune α</button></div>
+  </div>
+  <canvas data-canvas role="img" aria-label="Boltzmann policy over five actions for the chosen temperature, and its entropy"></canvas>
+  <p class="viz-status" data-status></p>
+</figure>
+
+<script>
+  import { fitCanvas, panel, redrawOn, setStatus, theme } from '../../lib/viz';
+
+  const q = [2.0, 1.7, 1.0, 0.2, -0.6];
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const boltzmann = (alpha: number) => {
+    const top = Math.max(...q);
+    const w = q.map((v) => Math.exp((v - top) / alpha));
+    const z = w.reduce((a, b) => a + b, 0);
+    return w.map((v) => v / z);
+  };
+
+  const entropy = (p: number[]) => -p.reduce((s, v) => s + (v > 0 ? v * Math.log(v) : 0), 0);
+
+  for (const root of document.querySelectorAll<HTMLElement>('[data-sac-temp]')) {
+    const canvas = root.querySelector<HTMLCanvasElement>('[data-canvas]')!;
+    const status = root.querySelector<HTMLElement>('[data-status]')!;
+    const alphaIn = root.querySelector<HTMLInputElement>('[data-alpha]')!;
+    const targetIn = root.querySelector<HTMLInputElement>('[data-target]')!;
+    const tune = root.querySelector<HTMLButtonElement>('[data-tune]')!;
+    let tuning = false;
+    let steps = 0;
+
+    const draw = () => {
+      const t = theme();
+      const alpha = 10 ** Number(alphaIn.value);
+      const target = Number(targetIn.value);
+      const p = boltzmann(alpha);
+      const h = entropy(p);
+      root.querySelector<HTMLOutputElement>('[data-alpha-out]')!.value = alpha.toFixed(3);
+      root.querySelector<HTMLOutputElement>('[data-target-out]')!.value = target.toFixed(2);
+
+      const { ctx, width } = fitCanvas(canvas, 300);
+      const barsW = Math.max(160, (width - 60) * 0.68);
+      const bars = { x: 40, y: 6, w: barsW, h: 240 };
+      const { x, y } = panel(ctx, bars, [0, q.length], [0, 1], 'π(a|s)');
+      const slot = bars.w / q.length;
+      ctx.font = `11px ${t.mono}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      p.forEach((v, i) => {
+        ctx.fillStyle = t.accent;
+        ctx.fillRect(x(i) + slot * 0.18, y(v), slot * 0.64, y(0) - y(v));
+        ctx.fillStyle = t.muted;
+        ctx.fillText(`a${i + 1}`, x(i + 0.5), bars.y + bars.h + 6);
+        ctx.fillText(`Q=${q[i].toFixed(1)}`, x(i + 0.5), bars.y + bars.h + 20);
+      });
+
+      const ent = { x: bars.x + bars.w + 52, y: 6, w: width - bars.w - 102, h: 240 };
+      const e = panel(ctx, ent, [0, 1], [0, 1.7], 'entropy');
+      ctx.strokeStyle = t.muted;
+      ctx.setLineDash([4, 4]);
+      ctx.lineWidth = 1.2;
+      for (const level of [target, Math.log(q.length)]) {
+        ctx.beginPath();
+        ctx.moveTo(ent.x, e.y(level));
+        ctx.lineTo(ent.x + ent.w, e.y(level));
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+      ctx.fillStyle = t.accent;
+      ctx.fillRect(e.x(0.25), e.y(h), e.x(0.75) - e.x(0.25), e.y(0) - e.y(h));
+      ctx.fillStyle = t.muted;
+      ctx.textAlign = 'center';
+      ctx.fillText('H̄ and log 5', ent.x + ent.w / 2, ent.y + ent.h + 6);
+
+      const gap = h - target;
+      const tail = tuning || steps > 0 ? ` After ${steps} temperature steps.` : '';
+      setStatus(
+        status,
+        `$\\alpha = ${alpha.toFixed(3)}$, $\\mathcal H = ${h.toFixed(3)}$ (target $${target.toFixed(2)}$, maximum $\\log 5 = 1.609$). ` +
+          (Math.abs(gap) < 0.01 ? 'The entropy matches the target.' : gap > 0 ? 'The policy is more random than the target, so the tuner lowers $\\alpha$.' : 'The policy is less random than the target, so the tuner raises $\\alpha$.') +
+          tail,
+      );
+    };
+
+    const step = () => {
+      const alpha = 10 ** Number(alphaIn.value);
+      const gap = entropy(boltzmann(alpha)) - Number(targetIn.value);
+      const logAlpha = Math.log(alpha) - 0.15 * gap;
+      alphaIn.value = String(Math.min(1, Math.max(-2, logAlpha / Math.LN10)));
+      steps += 1;
+      if (Math.abs(gap) < 0.002 || steps > 600) tuning = false;
+    };
+
+    const setTuning = (on: boolean) => {
+      tuning = on;
+      tune.setAttribute('aria-pressed', String(on));
+    };
+
+    alphaIn.addEventListener('input', () => {
+      setTuning(false);
+      steps = 0;
+      draw();
+    });
+    targetIn.addEventListener('input', () => {
+      steps = 0;
+      draw();
+    });
+    tune.addEventListener('click', () => {
+      steps = 0;
+      if (reduced) {
+        while (steps < 600 && Math.abs(entropy(boltzmann(10 ** Number(alphaIn.value))) - Number(targetIn.value)) >= 0.002) step();
+        draw();
+        return;
+      }
+      setTuning(!tuning);
+    });
+
+    const loop = () => {
+      if (tuning) {
+        step();
+        if (!tuning) setTuning(false);
+        draw();
+      }
+      requestAnimationFrame(loop);
+    };
+    requestAnimationFrame(loop);
+
+    redrawOn(canvas, draw);
+    draw();
+  }
+</script>

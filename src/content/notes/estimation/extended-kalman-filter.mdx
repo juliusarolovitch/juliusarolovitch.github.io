@@ -1,0 +1,183 @@
+---
+title: Extended Kalman filter
+updated: 2026-11-14
+order: 3
+draft: false
+---
+
+import EstimationDemo from '../../../components/estimation/EstimationDemo.astro';
+
+The [Kalman filter](/notes/estimation/kalman-filter/) predicts a state, predicts what a sensor should see, and corrects the state when the reading is surprising. Its linear form assumes that motion and measurements are weighted sums of the state variables.
+
+A range sensor does not measure a weighted sum of Cartesian coordinates. A rotating robot does not move as a weighted sum of its heading and speed. The **extended Kalman filter**, or EKF, keeps the nonlinear functions for predicting the state and measurement, and uses their local slopes to propagate uncertainty and calculate a correction.
+
+## One state, a curved measurement
+
+Imagine a cart on a straight track. A range sensor sits $b=2\,\mathrm m$ to the side of the track, beside its origin. If the cart is at position $p$, the distance to the sensor is
+
+$$
+z=h(p)+v,\qquad h(p)=\sqrt{p^2+b^2},
+$$
+
+where the range noise $v$ has variance $R$. Even though there is only one state, this measurement model is nonlinear.
+
+Suppose our prior is $\hat p^-=3\,\mathrm m$ with variance $P^-=1\,\mathrm m^2$, and the sensor reports $z=4\,\mathrm m$. The predicted reading is $h(3)=\sqrt{13}\approx3.606\,\mathrm m$, so the innovation is $r\approx0.394\,\mathrm m$.
+
+That is a discrepancy in *range*, not position. How much should we change $p$?
+
+## Use the local slope
+
+Near our current estimate, approximate the curved sensor function with its tangent:
+
+$$
+h(p)\approx h(\hat p^-)+H(p-\hat p^-),\qquad
+H=h'(\hat p^-)=\frac{\hat p^-}{\sqrt{(\hat p^-)^2+b^2}}.
+$$
+
+$H$ says how much the range would change for a small change in position. At $p=3$, it is approximately $0.832$. One extra meter along the track produces about $0.832$ extra meters of range locally.
+
+The corresponding Kalman update is
+
+$$
+S=H^2P^-+R,\qquad K=\frac{P^-H}{S},\qquad
+\hat p^+=\hat p^-+K\bigl(z-h(\hat p^-)\bigr).
+$$
+
+With $R=0.25\,\mathrm m^2$,
+
+$$
+S\approx0.942,\qquad K\approx0.883,\qquad
+\hat p^+\approx3.348\,\mathrm m,\qquad P^+\approx0.265\,\mathrm m^2.
+$$
+
+Here $P^+=(1-KH)P^-$ is the short scalar covariance update, and describes the local approximation. A gain above one is possible in other configurations: the gain converts a measurement residual into a state correction, so it is not generally a mixing fraction between two readings of the same quantity.
+
+> **The function and its derivative have different jobs.** Predict the range with $h(\hat p^-)$, not $H\hat p^-$. Use $H$ to describe how errors near that prediction affect the range. The tangent includes an offset, which disappears only when we write it in terms of small deviations.
+
+Things to try below:
+
+- Move the prior center along the track. Watch the tangent's slope and the resulting gain change.
+- Widen the prior standard deviation. The shaded horizontal span marks $\hat p^-\pm2\sigma$; the curve and tangent can disagree substantially within that span.
+- Move the prior center to zero. The tangent is flat, and the EKF makes no correction even when the reading disagrees with its prediction.
+
+<EstimationDemo kind="ekf" />
+
+### A useful failure case
+
+At $p=0$, the range derivative is zero. The EKF sees no first-order information about position and sets $K=0$. But the real measurement still contains information: a range much larger than $b$ suggests that the cart is far from the origin.
+
+The problem is symmetry. Positions $+p$ and $-p$ give the same range. A measurement can produce two plausible position regions, which a single Gaussian cannot represent well. Starting the filter on the wrong side of the sensor may keep it on the wrong side. A wider uncertainty band does not fix that representation.
+
+The EKF works best when the current estimate is already near the right solution and the functions are nearly linear over the likely errors. Initialization, additional sensors, or a representation that can retain several hypotheses may matter more than tuning $Q$ and $R$.
+
+## Nonlinear motion too
+
+Now let the state evolve through a nonlinear function:
+
+$$
+x_k=f(x_{k-1},u_k)+w_k,\qquad z_k=h(x_k)+v_k.
+$$
+
+For the scalar case, predict the mean using the actual function and propagate its variance using the derivative:
+
+$$
+\hat x_k^-=f(\hat x_{k-1}^+,u_k),\qquad
+F_k=\left.\frac{\partial f}{\partial x}\right|_{\hat x_{k-1}^+,u_k},\qquad
+P_k^-=F_k^2P_{k-1}^++Q_k.
+$$
+
+A local slope of two doubles a small state error, so it multiplies the variance by four. The process variance $Q_k$ accounts for additional uncertainty in the transition. As before, the variance rule is local; generally $\mathbb E[f(x)]\ne f(\mathbb E[x])$.
+
+For a small-angle pendulum we might have used linear dynamics. For a pendulum swinging through large angles, the true acceleration contains $\sin\theta$. The EKF can use $\sin\hat\theta$ in the prediction and $\cos\hat\theta$ in the derivative instead of pretending the small-angle approximation holds everywhere.
+
+## From slopes to Jacobians
+
+With several states, each output can depend on several inputs. A **Jacobian** collects all those local slopes. For $f:\mathbb R^n\to\mathbb R^n$ and $h:\mathbb R^n\to\mathbb R^m$,
+
+$$
+F_{ij}=\frac{\partial f_i}{\partial x_j},\qquad
+H_{ij}=\frac{\partial h_i}{\partial x_j}.
+$$
+
+Each column asks: if we perturb one state a little, which predicted quantities move, and by how much?
+
+Consider a robot moving in the plane, with known speed $s$ and turn rate $\omega$. Let its state be $x=[p_x,p_y,\theta]^\top$. A forward Euler motion model over a short interval is
+
+$$
+f(x,u)=\begin{bmatrix}
+p_x+s\Delta t\cos\theta\\
+p_y+s\Delta t\sin\theta\\
+\theta+\omega\Delta t
+\end{bmatrix},\qquad
+F=\begin{bmatrix}
+1&0&-s\Delta t\sin\theta\\
+0&1&s\Delta t\cos\theta\\
+0&0&1
+\end{bmatrix}.
+$$
+
+The last column explains how heading error becomes position error. If the robot points along the $x$ axis, $\theta=0$, and moves one meter, a small heading error $\delta\theta$ produces approximately $\delta p_y=\delta\theta$ meters. A heading standard deviation of $0.1$ radians therefore contributes about $0.1$ meters of lateral position standard deviation, even if position was initially known exactly.
+
+The covariance prediction $FPF^\top+Q$ performs this calculation in every state direction at once, keeping the resulting position/heading cross-covariance. Here $Q$ is already expressed as additive **state** noise covariance. If uncertainty instead enters the speed and turn-rate controls, propagate their covariance through the control Jacobian $G=\partial f/\partial u$ to obtain a contribution $G\Sigma_uG^\top$.
+
+### A landmark measurement
+
+Suppose the robot measures its range to a known landmark at $(\ell_x,\ell_y)$. Define $d_x=p_x-\ell_x$, $d_y=p_y-\ell_y$, and $r=\sqrt{d_x^2+d_y^2}$. Then
+
+$$
+h(x)=r,\qquad H=\begin{bmatrix}d_x/r&d_y/r&0\end{bmatrix},\quad r>0.
+$$
+
+$H$ projects position errors onto the radial direction from the landmark. A small motion perpendicular to that direction barely changes range. One range reading cannot determine both position coordinates uniquely.
+
+For a prior at $(3,4)$ relative to the landmark, $h=5$ and $H=[0.6,0.8,0]$. If $P^-=\operatorname{diag}(1,1,0.01)$ and $R=0.25$, then $S=1.25$ and
+
+$$
+K=\begin{bmatrix}0.48\\0.64\\0\end{bmatrix}.
+$$
+
+A measured range of $6$ moves the position estimate to $(3.48,4.64)$, outward along the radial direction. Its tangential position variance stays at $1\,\mathrm m^2$, while its radial variance falls to $0.2\,\mathrm m^2$. Heading is unchanged in this example because its prior cross-covariances are zero.
+
+After motion has created position/heading covariance, a range residual can also correct heading even though the last entry of $H$ is zero. As in the linear cart example, the matrix gain uses relationships between state errors to update indirectly observed quantities. Such a correction uses prior relationships; it does not mean that one range measurement uniquely determines the whole robot pose.
+
+## The EKF recursion
+
+For additive, zero-mean, mutually independent process and measurement noise, the full algorithm is:
+
+**Predict using the nonlinear model, then propagate uncertainty locally:**
+
+$$
+\begin{aligned}
+\hat x_k^-&=f(\hat x_{k-1}^+,u_k),\\
+F_k&=\left.\frac{\partial f}{\partial x}\right|_{\hat x_{k-1}^+,u_k},\\
+P_k^-&=F_kP_{k-1}^+F_k^\top+Q_k.
+\end{aligned}
+$$
+
+**Predict the nonlinear measurement, then calculate a local correction:**
+
+$$
+\begin{aligned}
+H_k&=\left.\frac{\partial h}{\partial x}\right|_{\hat x_k^-},\\
+r_k&=z_k-h(\hat x_k^-),\\
+S_k&=H_kP_k^-H_k^\top+R_k,\\
+K_k&=P_k^-H_k^\top S_k^{-1},\\
+\hat x_k^+&=\hat x_k^-+K_kr_k,\\
+P_k^+&=(I-K_kH_k)P_k^-(I-K_kH_k)^\top+K_kR_kK_k^\top.
+\end{aligned}
+$$
+
+Evaluate $F$ at the previous corrected state, and $H$ at the current predicted state. Both generally change at every sample. For linear $f(x,u)=Fx+Bu$ and $h(x)=Hx$, their Jacobians are the original matrices and this reduces to the ordinary Kalman filter.
+
+## Practical checks
+
+- **Check Jacobians numerically.** Compare each analytic column with $[f(x+\epsilon e_i)-f(x-\epsilon e_i)]/(2\epsilon)$ at several representative states. Choose perturbations appropriate to each state's units, and avoid discontinuities. Do the same for $h$.
+- **Handle angle residuals as angles.** A bearing reading of $-179^\circ$ compared with a prediction of $179^\circ$ differs by $2^\circ$, not $-358^\circ$. Wrap the difference into a consistent interval, and normalize estimated headings as needed.
+- **Keep timestamps and units consistent.** Integrate over the actual sample interval, express measurement covariance in the sensor's coordinates, and use radians in trigonometric derivatives. Non-additive noise needs its own Jacobians for covariance propagation.
+- **Inspect uncertainty as well as the path.** A plausible trajectory can still have an overconfident covariance. Use the sensor experiments and innovation checks in the [Kalman filter note](/notes/estimation/kalman-filter/#finding-sensor-covariance-in-practice), remembering that EKF consistency checks are approximate.
+
+The Luenberger observer chooses how a residual corrects a model. The Kalman filter calculates that correction using uncertainty. The EKF applies the same idea to local approximations of nonlinear models, with the accuracy and limitations of those approximations carried along.
+
+## Further reading
+
+[Welch and Bishop, An Introduction to the Kalman Filter](https://www.cs.utexas.edu/~pstone/Courses/393Rfall18/readings/Welch%2BBishop-TR-95.pdf) derives the EKF using the process and measurement Jacobians. [Särkkä and Svensson, Bayesian Filtering and Smoothing](https://users.aalto.fi/~ssarkka/pub/bfs_book_2023_online.pdf) places it among other Gaussian approximations and nonlinear filtering methods.

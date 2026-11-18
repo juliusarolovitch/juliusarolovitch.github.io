@@ -1,0 +1,102 @@
+---
+import katex from 'katex';
+
+const tex = (s: string) => katex.renderToString(s);
+---
+
+<figure class="viz" data-ppo-clip>
+  <div class="viz-controls">
+    <label><Fragment set:html={tex(String.raw`\hat A_t`)} /> <input type="range" min="-1" max="1" step="0.05" value="0.6" data-adv /><output data-adv-out></output></label>
+    <label><Fragment set:html={tex(String.raw`\epsilon`)} /> <input type="range" min="0.05" max="0.5" step="0.01" value="0.2" data-eps /><output data-eps-out></output></label>
+    <label><Fragment set:html={tex(String.raw`r_t(\theta)`)} /> <input type="range" min="0" max="2" step="0.01" value="1.35" data-ratio /><output data-ratio-out></output></label>
+  </div>
+  <canvas data-canvas role="img" aria-label="Clipped and unclipped PPO surrogate for one sample as a function of the probability ratio"></canvas>
+  <p class="viz-status" data-status></p>
+</figure>
+
+<script>
+  import { fitCanvas, panel, redrawOn, setStatus, theme } from '../../lib/viz';
+
+  for (const root of document.querySelectorAll<HTMLElement>('[data-ppo-clip]')) {
+    const canvas = root.querySelector<HTMLCanvasElement>('[data-canvas]')!;
+    const status = root.querySelector<HTMLElement>('[data-status]')!;
+    const advIn = root.querySelector<HTMLInputElement>('[data-adv]')!;
+    const epsIn = root.querySelector<HTMLInputElement>('[data-eps]')!;
+    const ratioIn = root.querySelector<HTMLInputElement>('[data-ratio]')!;
+
+    const draw = () => {
+      const t = theme();
+      const adv = Number(advIn.value);
+      const eps = Number(epsIn.value);
+      const ratio = Number(ratioIn.value);
+      root.querySelector<HTMLOutputElement>('[data-adv-out]')!.value = adv.toFixed(2);
+      root.querySelector<HTMLOutputElement>('[data-eps-out]')!.value = eps.toFixed(2);
+      root.querySelector<HTMLOutputElement>('[data-ratio-out]')!.value = ratio.toFixed(2);
+
+      const clipped = (r: number) => Math.min(Math.max(r, 1 - eps), 1 + eps) * adv;
+      const objective = (r: number) => Math.min(r * adv, clipped(r));
+
+      const { ctx, width } = fitCanvas(canvas, 290);
+      const box = { x: 44, y: 6, w: width - 56, h: 250 };
+      const { x, y } = panel(ctx, box, [0, 2], [-2, 2], 'objective for one sample');
+
+      ctx.fillStyle = t.accent;
+      ctx.globalAlpha = 0.1;
+      ctx.fillRect(x(1 - eps), box.y, x(1 + eps) - x(1 - eps), box.h);
+      ctx.globalAlpha = 1;
+
+      ctx.strokeStyle = t.muted;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([2, 3]);
+      ctx.beginPath();
+      ctx.moveTo(x(1), box.y);
+      ctx.lineTo(x(1), box.y + box.h);
+      ctx.stroke();
+
+      ctx.setLineDash([5, 4]);
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(x(0), y(0));
+      ctx.lineTo(x(2), y(2 * adv));
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.strokeStyle = t.accent;
+      ctx.lineWidth = 2.6;
+      ctx.beginPath();
+      for (let i = 0; i <= 400; i++) {
+        const r = (2 * i) / 400;
+        if (i === 0) ctx.moveTo(x(r), y(objective(r)));
+        else ctx.lineTo(x(r), y(objective(r)));
+      }
+      ctx.stroke();
+
+      ctx.fillStyle = t.fg;
+      ctx.beginPath();
+      ctx.arc(x(ratio), y(objective(ratio)), 5, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.font = `11px ${t.mono}`;
+      ctx.fillStyle = t.muted;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      for (const tick of [0, 0.5, 1, 1.5, 2]) ctx.fillText(String(tick), x(tick), box.y + box.h + 6);
+      ctx.textAlign = 'right';
+      ctx.fillText('ratio r', box.x + box.w, box.y + box.h + 20);
+      ctx.textAlign = 'left';
+      ctx.fillText('dashed: r·Â   solid: clipped objective', box.x + 6, box.y + 18);
+
+      const value = objective(ratio);
+      const flat = clipped(ratio) < ratio * adv;
+      const head = `At $r_t = ${ratio.toFixed(2)}$ the objective is $${value.toFixed(3)}$. `;
+      if (adv === 0) setStatus(status, head + 'With zero advantage this sample has no gradient.');
+      else if (flat)
+        setStatus(status, head + `The clipped term is smaller, so the gradient is zero: this sample cannot push $r_t$ further ${adv > 0 ? 'above' : 'below'} $${(adv > 0 ? 1 + eps : 1 - eps).toFixed(2)}$.`);
+      else setStatus(status, head + `The unclipped term is active, so the gradient is $\\hat A_t \\nabla_\\theta r_t$ and pushes $r_t$ ${adv > 0 ? 'up' : 'down'}.`);
+    };
+
+    for (const input of [advIn, epsIn, ratioIn]) input.addEventListener('input', draw);
+    redrawOn(canvas, draw);
+    draw();
+  }
+</script>
